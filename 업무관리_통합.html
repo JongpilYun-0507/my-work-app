@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>개인 업무관리</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root {
+    --paper: #EEF1F0; --paper-line: #D3DAD6; --ink: #1C2B2E; --ink-soft: #5A6B6C;
+    --blueprint: #2F5D8A; --blueprint-soft: #E4ECF3;
+    --urgent: #B24A2E; --urgent-soft: #F5E4DD;
+    --internal: #1F7A6C; --internal-soft: #E2EFEC;
+    --gold: #A8791A; --gold-soft: #F3EAD2;
+    --work: #2F5D8A; --work-soft: #E4ECF3;
+    --personal: #6B4FA0; --personal-soft: #EBE6F4;
+    --progress: #1F7A6C; --progress-soft: #E2EFEC;
+    --hold: #A8791A; --hold-soft: #F3EAD2;
+    --done: #5A6B6C; --done-soft: #E7EBEC;
+    --card: #FFFFFF; --radius: 3px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper);
+    background-image: linear-gradient(var(--paper-line) 1px, transparent 1px), linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+    background-size: 28px 28px; color: var(--ink); font-family: 'IBM Plex Sans KR', sans-serif;
+    min-height: 100vh; padding: 24px 16px 60px;
+  }
+  .sheet { max-width: 720px; margin: 0 auto; }
+
+  .titleblock { background: var(--card); border: 1.5px solid var(--ink); display: grid; grid-template-columns: 1fr auto; box-shadow: 3px 3px 0 rgba(28,43,46,0.08); }
+  .tb-main { padding: 18px 20px; border-right: 1.5px solid var(--ink); }
+  .tb-eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: var(--ink-soft); text-transform: uppercase; }
+  .tb-title { font-size: 24px; font-weight: 700; margin: 4px 0 0; letter-spacing: -0.01em; }
+  .tb-stats { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 12px 18px; min-width: 108px; }
+  .tb-stat-row { display: flex; justify-content: space-between; gap: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .tb-stat-label { color: var(--ink-soft); }
+  .tb-stat-value { font-weight: 600; }
+
+  .mainnav { display: flex; gap: 0; background: var(--ink); overflow-x: auto; }
+  .mainnav button {
+    flex: 1; min-width: 92px; background: var(--ink); color: #C7D0CC; border: none; border-right: 1px solid rgba(255,255,255,0.12);
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; letter-spacing: 0.02em; padding: 11px 6px; cursor: pointer; white-space: nowrap;
+  }
+  .mainnav button:last-child { border-right: none; }
+  .mainnav button.active { background: var(--blueprint); color: #fff; font-weight: 600; }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .addform { background: var(--card); border: 1.5px solid var(--ink); border-top: none; padding: 14px 18px 16px; }
+  .addform input[type="text"] {
+    width: 100%; border: none; border-bottom: 1.5px solid var(--paper-line);
+    font-family: 'IBM Plex Sans KR', sans-serif; font-size: 15px; padding: 8px 2px;
+    outline: none; background: transparent; color: var(--ink);
+  }
+  .addform input[type="text"]:focus { border-bottom-color: var(--blueprint); }
+  .addform input::placeholder, .addform textarea::placeholder { color: #A8B3AE; }
+  .addform textarea {
+    width: 100%; border: none; border-bottom: 1.5px solid var(--paper-line);
+    font-family: 'IBM Plex Sans KR', sans-serif; font-size: 14px; padding: 8px 2px; margin-top: 8px;
+    outline: none; background: transparent; color: var(--ink); resize: vertical; min-height: 60px; line-height: 1.5;
+  }
+  .addform textarea:focus { border-bottom-color: var(--blueprint); }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+  select, input[type="date"] {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; border: 1px solid var(--paper-line); border-radius: var(--radius);
+    background: var(--paper); color: var(--ink); padding: 6px 8px; outline: none;
+  }
+  select:focus, input[type="date"]:focus { border-color: var(--blueprint); }
+
+  .prio-toggle, .kind-toggle { display: flex; border: 1px solid var(--paper-line); border-radius: var(--radius); overflow: hidden; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .prio-toggle button, .kind-toggle button { border: none; background: var(--paper); color: var(--ink-soft); padding: 6px 10px; cursor: pointer; }
+  .prio-toggle button.active[data-p="일반"] { background: var(--blueprint-soft); color: var(--blueprint); font-weight: 600; }
+  .prio-toggle button.active[data-p="긴급"] { background: var(--urgent-soft); color: var(--urgent); font-weight: 600; }
+  .kind-toggle button.active[data-k="내부"] { background: var(--internal-soft); color: var(--internal); font-weight: 600; }
+  .kind-toggle button.active[data-k="외부"] { background: var(--urgent-soft); color: var(--urgent); font-weight: 600; }
+  .scope-toggle { display: flex; border: 1px solid var(--paper-line); border-radius: var(--radius); overflow: hidden; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .scope-toggle button { border: none; background: var(--paper); color: var(--ink-soft); padding: 6px 10px; cursor: pointer; }
+  .scope-toggle button.active[data-s="회사"] { background: var(--work-soft); color: var(--work); font-weight: 600; }
+  .scope-toggle button.active[data-s="개인"] { background: var(--personal-soft); color: var(--personal); font-weight: 600; }
+
+  .pin-toggle { display: flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+  .pin-toggle .box { width: 16px; height: 16px; border: 1.5px solid var(--paper-line); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .pin-toggle.active .box { background: var(--gold); border-color: var(--gold); color: #fff; }
+  .pin-toggle.active { color: var(--gold); font-weight: 600; }
+
+  .attendees-input {
+    width: 100%; border: none; border-bottom: 1.5px solid var(--paper-line);
+    font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; padding: 8px 2px; margin-top: 8px;
+    outline: none; background: transparent; color: var(--ink);
+  }
+  .attendees-input:focus { border-bottom-color: var(--blueprint); }
+
+  .progress-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .progress-row label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+  .progress-row input[type="range"] { flex: 1; accent-color: var(--blueprint); }
+  .progress-val { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; min-width: 32px; text-align: right; }
+
+  .add-btn {
+    margin-left: auto; background: var(--ink); color: #fff; border: none; border-radius: var(--radius);
+    padding: 7px 16px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .add-btn:hover { background: var(--blueprint); }
+
+  .tabs { display: flex; gap: 2px; margin-top: 18px; border-bottom: 1.5px solid var(--ink); flex-wrap: wrap; }
+  .tab { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 8px 14px; cursor: pointer; color: var(--ink-soft); background: transparent; border: none; border-bottom: 2px solid transparent; margin-bottom: -1.5px; }
+  .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--blueprint); }
+
+  .list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .tag { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 2px 6px; border-radius: 2px; font-weight: 600; letter-spacing: 0.02em; }
+  .tag.urgent { background: var(--urgent); color: #fff; }
+  .tag.int { background: var(--internal-soft); color: var(--internal); }
+  .tag.ext { background: var(--urgent-soft); color: var(--urgent); }
+  .tag.kind { background: var(--blueprint-soft); color: var(--blueprint); }
+  .tag.status-진행중 { background: var(--progress-soft); color: var(--progress); }
+  .tag.status-보류 { background: var(--hold-soft); color: var(--hold); }
+  .tag.status-완료 { background: var(--done-soft); color: var(--done); }
+  .tag.work { background: var(--work-soft); color: var(--work); }
+  .tag.personal { background: var(--personal-soft); color: var(--personal); }
+  .due, .due-tag, .date-tag, .time { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); }
+  .due.overdue, .due-tag.overdue { color: var(--urgent); font-weight: 600; }
+
+  .del-btn, .icon-btn { background: none; border: none; color: #B7C0BC; cursor: pointer; font-size: 16px; padding: 2px 4px; line-height: 1; flex-shrink: 0; }
+  .del-btn:hover, .icon-btn.del-btn:hover { color: var(--urgent); }
+  .icon-btn.pin-btn.active { color: var(--gold); }
+
+  .empty { text-align: center; padding: 40px 20px; color: var(--ink-soft); font-size: 13px; font-family: 'IBM Plex Mono', monospace; border: 1px dashed var(--paper-line); border-radius: var(--radius); background: rgba(255,255,255,0.5); margin-top: 14px; }
+
+  .task { background: var(--card); border: 1px solid var(--paper-line); border-left: 4px solid var(--ink-soft); border-radius: var(--radius); padding: 10px 12px; display: flex; align-items: flex-start; gap: 10px; }
+  .task.done { opacity: 0.55; }
+  .task.urgent { border-left-color: var(--urgent); }
+  .task.urgent:not(.done) { background: var(--urgent-soft); }
+  .checkbox { width: 18px; height: 18px; border: 1.5px solid var(--ink-soft); border-radius: 3px; margin-top: 2px; flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; background: #fff; }
+  .checkbox.checked { background: var(--ink); border-color: var(--ink); color: #fff; font-size: 12px; }
+  .task-body, .entry-body { flex: 1; min-width: 0; }
+  .task-text { font-size: 14.5px; line-height: 1.4; word-break: break-word; }
+  .task.done .task-text { text-decoration: line-through; color: var(--done); }
+  .task-meta, .entry-meta, .note-meta { display: flex; gap: 8px; margin-top: 5px; flex-wrap: wrap; align-items: center; }
+
+  .day-group { margin-top: 18px; }
+  .day-header { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: var(--ink-soft); padding: 4px 2px; display: flex; align-items: baseline; gap: 8px; }
+  .day-header .line { flex: 1; border-bottom: 1px dashed var(--paper-line); }
+  .entry { background: var(--card); border: 1px solid var(--paper-line); border-left: 4px solid var(--ink-soft); border-radius: var(--radius); padding: 10px 12px; display: flex; align-items: flex-start; gap: 10px; }
+  .entry-text { font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+  .meeting { background: var(--card); border: 1px solid var(--paper-line); border-left: 4px solid var(--internal); border-radius: var(--radius); padding: 12px 14px; }
+  .meeting.ext { border-left-color: var(--urgent); }
+  .meeting-head, .note-head, .goal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .meeting-title, .note-title, .goal-title { font-size: 15px; font-weight: 600; }
+  .meeting-tags, .goal-tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+  .meeting-attendees { font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
+  .meeting-content, .note-content, .goal-desc { font-size: 14px; line-height: 1.55; margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
+
+  .note { background: var(--card); border: 1px solid var(--paper-line); border-left: 4px solid var(--blueprint); border-radius: var(--radius); padding: 12px 14px; }
+  .note.pinned { border-left-color: var(--gold); background: var(--gold-soft); }
+  .note-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+  .goal { background: var(--card); border: 1px solid var(--paper-line); border-left: 4px solid var(--ink-soft); border-radius: var(--radius); padding: 12px 14px; }
+  .goal.status-진행중 { border-left-color: var(--progress); }
+  .goal.status-보류 { border-left-color: var(--hold); }
+  .goal.status-완료 { border-left-color: var(--done); }
+  .goal.status-완료 .goal-title { color: var(--done); text-decoration: line-through; }
+  .rec-box { margin-top: 10px; border: 1px dashed var(--paper-line); border-radius: var(--radius); padding: 10px 12px; background: var(--paper); }
+  .rec-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rec-btn { border: none; border-radius: var(--radius); padding: 7px 14px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--urgent); color: #fff; }
+  .rec-btn.recording { background: var(--urgent); animation: pulse 1.2s infinite; }
+  .rec-btn.summarize { background: var(--blueprint); }
+  .rec-btn:disabled { background: #B7C0BC; cursor: not-allowed; animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.55;} }
+  .rec-status { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); }
+  .rec-transcript { margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--ink-soft); background: #fff; border: 1px solid var(--paper-line); border-radius: var(--radius); padding: 8px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; }
+  .transcript-toggle { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--blueprint); cursor: pointer; margin-top: 6px; display: inline-block; }
+  .goal-progress { margin-top: 10px; }
+  .bar-track { height: 8px; background: var(--paper); border: 1px solid var(--paper-line); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--blueprint); }
+  .goal.status-완료 .bar-fill { background: var(--done); }
+  .bar-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); margin-top: 4px; display: flex; justify-content: space-between; }
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+</head>
+<body>
+  <div id="lockOverlay" style="position:fixed; inset:0; background:#1C2B2E; display:flex; align-items:center; justify-content:center; z-index:9999; flex-direction:column; gap:14px; font-family:'IBM Plex Sans KR', sans-serif;">
+    <div style="color:#EEF1F0; font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:0.1em;">개인 업무관리 — 잠금</div>
+    <input type="password" id="lockInput" inputmode="numeric" maxlength="20" placeholder="비밀번호" style="font-size:20px; letter-spacing:0.3em; text-align:center; padding:10px 14px; border-radius:4px; border:1.5px solid #5A6B6C; outline:none; width:180px;">
+    <button id="lockBtn" style="background:#2F5D8A; color:#fff; border:none; border-radius:4px; padding:9px 20px; font-family:'IBM Plex Sans KR', sans-serif; font-size:14px; font-weight:600; cursor:pointer;">열기</button>
+    <div id="lockError" style="color:#E08A6B; font-family:'IBM Plex Mono',monospace; font-size:12px; height:16px;"></div>
+  </div>
+  <div class="sheet" id="mainSheet" style="display:none;">
+    <div class="titleblock">
+      <div class="tb-main">
+        <div class="tb-eyebrow">WORK MANAGEMENT</div>
+        <div class="tb-title" id="pageTitle">개인 업무관리</div>
+      </div>
+      <div class="tb-stats">
+        <div class="tb-stat-row"><span class="tb-stat-label">DATE</span><span class="tb-stat-value" id="todayDate">-</span></div>
+        <div class="tb-stat-row" id="statRow1"><span class="tb-stat-label">OPEN</span><span class="tb-stat-value" id="stat1">0</span></div>
+        <div class="tb-stat-row" id="statRow2"><span class="tb-stat-label">DONE</span><span class="tb-stat-value" id="stat2">0</span></div>
+      </div>
+    </div>
+    <div id="storageStatus" style="font-family:'IBM Plex Mono',monospace; font-size:11px; padding:6px 12px; background:#fff; border:1px solid var(--paper-line); border-top:none; color:var(--ink-soft);">저장소 확인 중...</div>
+    <div class="mainnav" id="mainnav">
+      <button class="active" data-page="todo">할일</button>
+      <button data-page="log">업무일지</button>
+      <button data-page="meeting">회의록</button>
+      <button data-page="note">인사이트</button>
+      <button data-page="goal">목표관리</button>
+    </div>
+
+    <div class="page active" id="page-todo">
+      <div class="addform">
+        <input type="text" id="todo_input" placeholder="할 일을 입력하세요" maxlength="200">
+        <div class="row">
+          <input type="date" id="todo_due">
+          <div class="prio-toggle" id="todo_prioToggle">
+            <button type="button" data-p="일반" class="active">일반</button>
+            <button type="button" data-p="긴급">긴급</button>
+          </div>
+          <div class="scope-toggle" id="todo_scopeToggle">
+            <button type="button" data-s="회사" class="active">회사</button>
+            <button type="button" data-s="개인">개인</button>
+          </div>
+          <button class="add-btn" id="todo_addBtn">추가</button>
+        </div>
+      </div>
+      <div class="tabs" id="todo_tabs">
+        <button class="tab active" data-filter="all">전체</button>
+        <button class="tab" data-filter="회사">회사</button>
+        <button class="tab" data-filter="개인">개인</button>
+        <button class="tab" data-filter="done">완료</button>
+      </div>
+      <div class="list" id="todo_list"></div>
+    </div>
+
+    <div class="page" id="page-log">
+      <div class="addform">
+        <textarea id="log_input" placeholder="오늘 한 일을 기록하세요" maxlength="1000"></textarea>
+        <div class="row">
+          <input type="date" id="log_date">
+          <div class="scope-toggle" id="log_scopeToggle">
+            <button type="button" data-s="회사" class="active">회사</button>
+            <button type="button" data-s="개인">개인</button>
+          </div>
+          <button class="add-btn" id="log_addBtn">기록 추가</button>
+        </div>
+      </div>
+      <div class="tabs" id="log_tabs">
+        <button class="tab active" data-filter="all">전체</button>
+        <button class="tab" data-filter="회사">회사</button>
+        <button class="tab" data-filter="개인">개인</button>
+      </div>
+      <div id="log_groups"></div>
+    </div>
+
+    <div class="page" id="page-meeting">
+      <div class="addform">
+        <input type="text" id="meet_title" placeholder="회의 제목" maxlength="120">
+        <div class="row">
+          <div class="kind-toggle" id="meet_kindToggle">
+            <button type="button" data-k="내부" class="active">내부미팅</button>
+            <button type="button" data-k="외부">외부미팅</button>
+          </div>
+          <select id="meet_type">
+            <option value="프로젝트">프로젝트</option>
+            <option value="부서별·개인별">부서별·개인별</option>
+            <option value="경영지원">경영지원</option>
+            <option value="직원면담">직원면담</option>
+          </select>
+          <input type="date" id="meet_date">
+        </div>
+        <input type="text" class="attendees-input" id="meet_attendees" placeholder="참석자 (쉼표로 구분)" maxlength="200">
+        <textarea id="meet_content" placeholder="회의 내용, 결정사항, 후속조치 등" maxlength="3000"></textarea>
+        <div class="rec-box">
+          <div class="rec-controls">
+            <button type="button" class="rec-btn" id="meet_recBtn">🎙 녹음 시작</button>
+            <button type="button" class="rec-btn summarize" id="meet_summarizeBtn" disabled>AI 요약해서 넣기</button>
+            <span class="rec-status" id="meet_recStatus"></span>
+          </div>
+          <div class="rec-transcript" id="meet_transcript" style="display:none;"></div>
+        </div>
+        <div class="row"><button class="add-btn" id="meet_addBtn">회의록 추가</button></div>
+      </div>
+      <div class="tabs" id="meet_tabs">
+        <button class="tab active" data-filter="all">전체</button>
+        <button class="tab" data-filter="내부">내부미팅</button>
+        <button class="tab" data-filter="외부">외부미팅</button>
+        <button class="tab" data-filter="프로젝트">프로젝트</button>
+        <button class="tab" data-filter="부서별·개인별">부서별·개인별</button>
+        <button class="tab" data-filter="경영지원">경영지원</button>
+        <button class="tab" data-filter="직원면담">직원면담</button>
+      </div>
+      <div class="list" id="meet_list"></div>
+    </div>
+
+    <div class="page" id="page-note">
+      <div class="addform">
+        <input type="text" id="note_title" placeholder="제목">
+        <textarea id="note_content" placeholder="떠오른 생각, 인사이트, 이니셔티브를 자유롭게 기록하세요" maxlength="3000"></textarea>
+        <div class="row">
+          <div class="scope-toggle" id="note_scopeToggle">
+            <button type="button" data-s="회사" class="active">회사</button>
+            <button type="button" data-s="개인">개인</button>
+          </div>
+          <div class="pin-toggle" id="note_pinToggle"><span class="box"></span>중요 고정</div>
+          <button class="add-btn" id="note_addBtn">메모 추가</button>
+        </div>
+      </div>
+      <div class="tabs" id="note_tabs">
+        <button class="tab active" data-filter="all">전체</button>
+        <button class="tab" data-filter="회사">회사</button>
+        <button class="tab" data-filter="개인">개인</button>
+        <button class="tab" data-filter="pinned">고정됨</button>
+      </div>
+      <div class="list" id="note_list"></div>
+    </div>
+
+    <div class="page" id="page-goal">
+      <div class="addform">
+        <input type="text" id="goal_title" placeholder="목표/R&D 과제명" maxlength="150">
+        <textarea id="goal_desc" placeholder="세부 내용, 배경, 추진 방향 등" maxlength="2000"></textarea>
+        <div class="row">
+          <select id="goal_status">
+            <option value="진행중">진행중</option>
+            <option value="보류">보류</option>
+            <option value="완료">완료</option>
+          </select>
+          <input type="date" id="goal_due">
+          <div class="scope-toggle" id="goal_scopeToggle">
+            <button type="button" data-s="회사" class="active">회사</button>
+            <button type="button" data-s="개인">개인</button>
+          </div>
+        </div>
+        <div class="progress-row">
+          <label>진행률</label>
+          <input type="range" id="goal_progress" min="0" max="100" value="0" step="5">
+          <span class="progress-val" id="goal_progressVal">0%</span>
+        </div>
+        <div class="row"><button class="add-btn" id="goal_addBtn">목표 추가</button></div>
+      </div>
+      <div class="tabs" id="goal_tabs">
+        <button class="tab active" data-filter="all">전체</button>
+        <button class="tab" data-filter="진행중">진행중</button>
+        <button class="tab" data-filter="보류">보류</button>
+        <button class="tab" data-filter="완료">완료</button>
+        <button class="tab" data-filter="회사">회사</button>
+        <button class="tab" data-filter="개인">개인</button>
+      </div>
+      <div class="list" id="goal_list"></div>
+    </div>
+  </div>
+
+<script>
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatToday() {
+  const d = new Date();
+  const days = ['일','월','화','수','목','금','토'];
+  return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} (${days[d.getDay()]})`;
+}
+document.getElementById('todayDate').textContent = formatToday();
+
+const storageStatusEl = document.getElementById('storageStatus');
+
+// Firebase Realtime Database 연결 — PC/스마트폰이 같은 DB를 공유하므로
+// 기기 간 데이터가 동기화됩니다.
+const firebaseConfig = {
+  apiKey: "AIzaSyDd1jsY7V6o3--n6_REuQVUE-MO0x6rjYM",
+  authDomain: "private-work-management.firebaseapp.com",
+  databaseURL: "https://private-work-management-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "private-work-management",
+  storageBucket: "private-work-management.firebasestorage.app",
+  messagingSenderId: "527858171674",
+  appId: "1:527858171674:web:73c633187bf48705f6b6a3"
+};
+firebase.initializeApp(firebaseConfig);
+const fbdb = firebase.database();
+
+window.storage = {
+  async get(key, shared) {
+    const snap = await fbdb.ref('wm/' + key).once('value');
+    if (!snap.exists()) { const err = new Error('not found'); throw err; }
+    return { key, value: snap.val(), shared: !!shared };
+  },
+  async set(key, value, shared) {
+    await fbdb.ref('wm/' + key).set(value);
+    return { key, value, shared: !!shared };
+  },
+  async delete(key, shared) {
+    await fbdb.ref('wm/' + key).remove();
+    return { key, deleted: true, shared: !!shared };
+  },
+  async list(prefix, shared) {
+    const snap = await fbdb.ref('wm').once('value');
+    const all = snap.exists() ? snap.val() : {};
+    const keys = Object.keys(all).filter(k => k.startsWith(prefix || ''));
+    return { keys, prefix, shared: !!shared };
+  }
+};
+
+(async function checkStorage(){
+  try {
+    const testKey = '__storage_test__';
+    const testVal = 'ok-' + Date.now();
+    await window.storage.set(testKey, testVal, false);
+    const r = await window.storage.get(testKey, false);
+    if (r && r.value === testVal) {
+      storageStatusEl.textContent = '저장소 정상 연결됨 (클라우드 DB - 기기 간 동기화됨)';
+      storageStatusEl.style.color = '#1F7A6C';
+      setTimeout(()=>{ storageStatusEl.style.display='none'; }, 3000);
+    } else {
+      storageStatusEl.textContent = '저장소 오류: 쓰기 후 값을 다시 읽지 못했습니다';
+      storageStatusEl.style.color = '#B24A2E';
+    }
+  } catch (e) {
+    storageStatusEl.textContent = '저장소 오류: ' + (e && e.message ? e.message : String(e));
+    storageStatusEl.style.color = '#B24A2E';
+  }
+})();
+
+(function(){
+  const KEY = 'tasks';
+  let items = [], filter = 'all', priority = '일반', scope = '회사', loaded = false;
+  const listEl = document.getElementById('todo_list');
+  const input = document.getElementById('todo_input');
+  const dueInput = document.getElementById('todo_due');
+  const addBtn = document.getElementById('todo_addBtn');
+  const tabsEl = document.getElementById('todo_tabs');
+  const prioToggle = document.getElementById('todo_prioToggle');
+  const scopeToggle = document.getElementById('todo_scopeToggle');
+
+  async function load() {
+    try { const r = await window.storage.get(KEY, false); items = r && r.value ? JSON.parse(r.value) : []; }
+    catch(e){ items = []; }
+    loaded = true; render();
+  }
+  async function save() { try { await window.storage.set(KEY, JSON.stringify(items), false); } catch(e){} }
+  function add() {
+    const text = input.value.trim(); if (!text) return;
+    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), text, priority, scope, due: dueInput.value || null, done:false, createdAt: Date.now() });
+    input.value=''; dueInput.value=''; save(); render(); input.focus();
+  }
+  function toggle(id){ const t=items.find(x=>x.id===id); if(t){t.done=!t.done; save(); render();} }
+  function del(id){ items=items.filter(x=>x.id!==id); save(); render(); }
+  function sortItems(arr){
+    return arr.slice().sort((a,b)=>{
+      if (a.done!==b.done) return a.done?1:-1;
+      if (a.priority!==b.priority) return a.priority==='긴급'?-1:1;
+      const ad=a.due||'9999-99-99', bd=b.due||'9999-99-99';
+      if (ad!==bd) return ad<bd?-1:1;
+      return b.createdAt-a.createdAt;
+    });
+  }
+  window.todo_render = function render(){
+    if (!loaded) return;
+    const open = items.filter(t=>!t.done).length, done = items.filter(t=>t.done).length;
+    document.getElementById('stat1').textContent = open;
+    document.getElementById('stat2').textContent = done;
+    document.getElementById('statRow1').firstElementChild.textContent = 'OPEN';
+    document.getElementById('statRow2').firstElementChild.textContent = 'DONE';
+
+    let filtered;
+    if (filter==='all') filtered = items.filter(t=>!t.done);
+    else if (filter==='done') filtered = items.filter(t=>t.done);
+    else filtered = items.filter(t=>t.scope===filter && !t.done);
+    filtered = sortItems(filtered);
+
+    if (filtered.length===0) { listEl.innerHTML = `<div class="empty">${filter==='done'?'완료된 업무가 없습니다':'등록된 업무가 없습니다'}</div>`; return; }
+    const today = todayISO();
+    listEl.innerHTML = filtered.map(t=>{
+      const overdue = t.due && t.due<today && !t.done;
+      return `<div class="task ${t.done?'done':''} ${t.priority==='긴급'?'urgent':''}" data-id="${t.id}">
+        <div class="checkbox ${t.done?'checked':''}" data-action="toggle">${t.done?'✓':''}</div>
+        <div class="task-body">
+          <div class="task-text">${escapeHtml(t.text)}</div>
+          <div class="task-meta">
+            <span class="tag ${t.scope==='개인'?'personal':'work'}">${t.scope||'회사'}</span>
+            ${t.priority==='긴급'?'<span class="tag urgent">긴급</span>':''}
+            ${t.due?`<span class="due ${overdue?'overdue':''}">${t.due}${overdue?' 기한초과':''}</span>`:''}
+          </div>
+        </div>
+        <button class="del-btn" data-action="delete">×</button>
+      </div>`;
+    }).join('');
+  };
+  const render = window.todo_render;
+  listEl.addEventListener('click', e=>{
+    const el=e.target.closest('.task'); if(!el) return;
+    const a=e.target.closest('[data-action]'); if(!a) return;
+    if(a.dataset.action==='toggle') toggle(el.dataset.id);
+    if(a.dataset.action==='delete') del(el.dataset.id);
+  });
+  addBtn.addEventListener('click', add);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') add(); });
+  prioToggle.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    priority=b.dataset.p;
+    prioToggle.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  scopeToggle.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    scope=b.dataset.s;
+    scopeToggle.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  tabsEl.addEventListener('click', e=>{
+    const t=e.target.closest('.tab'); if(!t) return;
+    filter=t.dataset.filter;
+    tabsEl.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); render();
+  });
+  load();
+})();
+
+(function(){
+  const KEY='entries';
+  let items=[], filter='all', scope='회사', loaded=false;
+  const groupsEl=document.getElementById('log_groups');
+  const input=document.getElementById('log_input');
+  const dateInput=document.getElementById('log_date');
+  const addBtn=document.getElementById('log_addBtn');
+  const tabsEl=document.getElementById('log_tabs');
+  const scopeToggle=document.getElementById('log_scopeToggle');
+  dateInput.value=todayISO();
+
+  function formatDateLabel(iso){
+    const d=new Date(iso+'T00:00:00'); const days=['일','월','화','수','목','금','토'];
+    return `${iso} (${days[d.getDay()]})`;
+  }
+  async function load(){
+    try{ const r=await window.storage.get(KEY,false); items=r&&r.value?JSON.parse(r.value):[]; }catch(e){ items=[]; }
+    loaded=true; render();
+  }
+  async function save(){ try{ await window.storage.set(KEY, JSON.stringify(items), false); }catch(e){} }
+  function add(){
+    const text=input.value.trim(); if(!text) return;
+    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), text, date:dateInput.value||todayISO(), scope, createdAt:Date.now() });
+    input.value=''; save(); render(); input.focus();
+  }
+  function del(id){ items=items.filter(x=>x.id!==id); save(); render(); }
+
+  window.log_render = function render(){
+    if (!loaded) return;
+    const today=todayISO();
+    if (document.getElementById('mainnav').querySelector('[data-page="log"]').classList.contains('active')) {
+      document.getElementById('statRow1').firstElementChild.textContent='오늘';
+      document.getElementById('stat1').textContent = items.filter(e=>e.date===today).length;
+      document.getElementById('statRow2').firstElementChild.textContent='전체';
+      document.getElementById('stat2').textContent = items.length;
+    }
+    const filtered = filter==='all' ? items : items.filter(e=>e.scope===filter);
+    if (filtered.length===0){ groupsEl.innerHTML=`<div class="empty">기록된 업무일지가 없습니다</div>`; return; }
+    const byDate={};
+    filtered.forEach(e=>{ (byDate[e.date]=byDate[e.date]||[]).push(e); });
+    const dates=Object.keys(byDate).sort((a,b)=> b<a?-1:b>a?1:0);
+    groupsEl.innerHTML = dates.map(date=>{
+      const its = byDate[date].sort((a,b)=>b.createdAt-a.createdAt);
+      return `<div class="day-group">
+        <div class="day-header"><span>${formatDateLabel(date)}</span><span class="line"></span><span>${its.length}건</span></div>
+        <div class="list">
+          ${its.map(e=>`<div class="entry" data-id="${e.id}">
+            <div class="entry-body">
+              <div class="entry-text">${escapeHtml(e.text)}</div>
+              <div class="entry-meta">
+                <span class="tag ${e.scope==='개인'?'personal':'work'}">${e.scope||'회사'}</span>
+                <span class="time">${new Date(e.createdAt).toTimeString().slice(0,5)}</span>
+              </div>
+            </div>
+            <button class="del-btn" data-action="delete">×</button>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  };
+  const render = window.log_render;
+  groupsEl.addEventListener('click', e=>{
+    const el=e.target.closest('.entry'); if(!el) return;
+    const a=e.target.closest('[data-action]');
+    if(a && a.dataset.action==='delete') del(el.dataset.id);
+  });
+  addBtn.addEventListener('click', add);
+  scopeToggle.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    scope=b.dataset.s;
+    scopeToggle.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  tabsEl.addEventListener('click', e=>{
+    const t=e.target.closest('.tab'); if(!t) return;
+    filter=t.dataset.filter;
+    tabsEl.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); render();
+  });
+  load();
+})();
+
+(function(){
+  const KEY='meetings';
+  let items=[], filter='all', kind='내부', loaded=false;
+  let currentTranscript = '';
+  let recognizing = false;
+  let recognition = null;
+  const listEl=document.getElementById('meet_list');
+  const titleInput=document.getElementById('meet_title');
+  const dateInput=document.getElementById('meet_date');
+  const typeSel=document.getElementById('meet_type');
+  const attendeesInput=document.getElementById('meet_attendees');
+  const contentInput=document.getElementById('meet_content');
+  const addBtn=document.getElementById('meet_addBtn');
+  const kindToggle=document.getElementById('meet_kindToggle');
+  const tabsEl=document.getElementById('meet_tabs');
+  const recBtn=document.getElementById('meet_recBtn');
+  const summarizeBtn=document.getElementById('meet_summarizeBtn');
+  const recStatus=document.getElementById('meet_recStatus');
+  const transcriptEl=document.getElementById('meet_transcript');
+  dateInput.value=todayISO();
+
+  const SpeechRecognitionCls = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCls) {
+    recBtn.disabled = true;
+    recStatus.textContent = '이 브라우저는 음성인식을 지원하지 않습니다 (크롬 권장)';
+  }
+
+  function startRecording() {
+    if (!SpeechRecognitionCls) return;
+    recognition = new SpeechRecognitionCls();
+    recognition.lang = 'ko-KR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript;
+        if (event.results[i].isFinal) currentTranscript += text + ' ';
+        else interim += text;
+      }
+      transcriptEl.style.display = 'block';
+      transcriptEl.textContent = currentTranscript + interim;
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      summarizeBtn.disabled = currentTranscript.trim().length === 0;
+    };
+    recognition.onerror = (event) => {
+      recStatus.textContent = '음성인식 오류: ' + event.error;
+    };
+    recognition.onend = () => {
+      if (recognizing) {
+        try { recognition.start(); } catch(e) {}
+      }
+    };
+    recognizing = true;
+    recBtn.textContent = '⏹ 녹음 중지';
+    recBtn.classList.add('recording');
+    recStatus.textContent = '녹음 중... (말씀하시면 실시간으로 텍스트화됩니다)';
+    try { recognition.start(); } catch(e) {}
+  }
+
+  function stopRecording() {
+    recognizing = false;
+    if (recognition) { try { recognition.stop(); } catch(e) {} }
+    recBtn.textContent = '🎙 녹음 시작';
+    recBtn.classList.remove('recording');
+    recStatus.textContent = currentTranscript.trim() ? '녹음 종료 — 아래 "AI 요약해서 넣기"를 눌러보세요' : '';
+  }
+
+  async function summarizeTranscript() {
+    if (!currentTranscript.trim()) return;
+    summarizeBtn.disabled = true;
+    summarizeBtn.textContent = '요약 중...';
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: '다음은 회의 녹음을 실시간 음성인식으로 받아쓴 내용입니다. 오탈자나 인식 오류가 있을 수 있으니 문맥으로 자연스럽게 보정해서, 핵심 논의 내용과 결정사항, 후속조치를 한국어로 간결하게 정리해줘. 불릿 형식으로 작성해줘.\\n\\n받아쓴 내용:\\n' + currentTranscript
+          }]
+        })
+      });
+      const data = await res.json();
+      const summary = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\\n');
+      if (summary) {
+        contentInput.value = contentInput.value ? (contentInput.value + '\\n\\n' + summary) : summary;
+      } else {
+        recStatus.textContent = '요약 결과를 받지 못했습니다';
+      }
+    } catch (e) {
+      recStatus.textContent = '요약 실패: ' + (e && e.message ? e.message : String(e));
+    }
+    summarizeBtn.disabled = false;
+    summarizeBtn.textContent = 'AI 요약해서 넣기';
+  }
+
+  recBtn.addEventListener('click', () => { recognizing ? stopRecording() : startRecording(); });
+  summarizeBtn.addEventListener('click', summarizeTranscript);
+
+  async function load(){
+    try{ const r=await window.storage.get(KEY,false); items=r&&r.value?JSON.parse(r.value):[]; }catch(e){ items=[]; }
+    loaded=true; render();
+  }
+  async function save(){ try{ await window.storage.set(KEY, JSON.stringify(items), false); }catch(e){} }
+  function add(){
+    const title=titleInput.value.trim(); if(!title) return;
+    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), title, kind, type:typeSel.value, date:dateInput.value||todayISO(), attendees:attendeesInput.value.trim(), content:contentInput.value.trim(), transcript: currentTranscript.trim(), createdAt:Date.now() });
+    titleInput.value=''; attendeesInput.value=''; contentInput.value='';
+    if (recognizing) stopRecording();
+    currentTranscript = '';
+    transcriptEl.style.display = 'none';
+    transcriptEl.textContent = '';
+    summarizeBtn.disabled = true;
+    recStatus.textContent = '';
+    save(); render(); titleInput.focus();
+  }
+  function del(id){ items=items.filter(x=>x.id!==id); save(); render(); }
+
+  window.meet_render = function render(){
+    if (!loaded) return;
+    if (document.getElementById('mainnav').querySelector('[data-page="meeting"]').classList.contains('active')) {
+      document.getElementById('statRow1').firstElementChild.textContent='내부';
+      document.getElementById('stat1').textContent = items.filter(m=>m.kind==='내부').length;
+      document.getElementById('statRow2').firstElementChild.textContent='외부';
+      document.getElementById('stat2').textContent = items.filter(m=>m.kind==='외부').length;
+    }
+    let filtered;
+    if (filter==='all') filtered=items;
+    else if (filter==='내부'||filter==='외부') filtered=items.filter(m=>m.kind===filter);
+    else filtered=items.filter(m=>m.type===filter);
+    filtered = filtered.slice().sort((a,b)=>b.createdAt-a.createdAt);
+    if (filtered.length===0){ listEl.innerHTML=`<div class="empty">등록된 회의록이 없습니다</div>`; return; }
+    listEl.innerHTML = filtered.map(m=>`<div class="meeting ${m.kind==='외부'?'ext':''}" data-id="${m.id}">
+      <div class="meeting-head">
+        <div>
+          <div class="meeting-title">${escapeHtml(m.title)}</div>
+          <div class="meeting-tags">
+            <span class="tag ${m.kind==='외부'?'ext':'int'}">${m.kind}미팅</span>
+            <span class="tag kind">${m.type}</span>
+            <span class="date-tag">${m.date}</span>
+          </div>
+        </div>
+        <button class="del-btn" data-action="delete">×</button>
+      </div>
+      ${m.attendees?`<div class="meeting-attendees">참석: ${escapeHtml(m.attendees)}</div>`:''}
+      ${m.content?`<div class="meeting-content">${escapeHtml(m.content)}</div>`:''}
+      ${m.transcript?`<div class="transcript-toggle" data-action="toggleTranscript">받아쓰기 원문 보기</div><div class="rec-transcript" style="display:none;">${escapeHtml(m.transcript)}</div>`:''}
+    </div>`).join('');
+  };
+  const render = window.meet_render;
+  listEl.addEventListener('click', e=>{
+    const el=e.target.closest('.meeting'); if(!el) return;
+    const a=e.target.closest('[data-action]');
+    if(a && a.dataset.action==='delete') del(el.dataset.id);
+    if(a && a.dataset.action==='toggleTranscript'){
+      const box = a.nextElementSibling;
+      if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
+  });
+  addBtn.addEventListener('click', add);
+  kindToggle.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    kind=b.dataset.k;
+    kindToggle.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  tabsEl.addEventListener('click', e=>{
+    const t=e.target.closest('.tab'); if(!t) return;
+    filter=t.dataset.filter;
+    tabsEl.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); render();
+  });
+  load();
+})();
+
+(function(){
+  const KEY='notes';
+  let items=[], filter='all', pinned=false, scope='회사', loaded=false;
+  const listEl=document.getElementById('note_list');
+  const titleInput=document.getElementById('note_title');
+  const contentInput=document.getElementById('note_content');
+  const addBtn=document.getElementById('note_addBtn');
+  const pinToggle=document.getElementById('note_pinToggle');
+  const scopeToggle=document.getElementById('note_scopeToggle');
+  const tabsEl=document.getElementById('note_tabs');
+
+  function formatDate(ts){ const d=new Date(ts); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`; }
+  async function load(){
+    try{ const r=await window.storage.get(KEY,false); items=r&&r.value?JSON.parse(r.value):[]; }catch(e){ items=[]; }
+    loaded=true; render();
+  }
+  async function save(){ try{ await window.storage.set(KEY, JSON.stringify(items), false); }catch(e){} }
+  function add(){
+    const content=contentInput.value.trim(); const title=titleInput.value.trim();
+    if(!content && !title) return;
+    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), title: title||'(제목 없음)', content, pinned, scope, createdAt: Date.now() });
+    titleInput.value=''; contentInput.value=''; pinned=false; pinToggle.classList.remove('active');
+    save(); render(); titleInput.focus();
+  }
+  function togglePin(id){ const n=items.find(x=>x.id===id); if(n){ n.pinned=!n.pinned; save(); render(); } }
+  function del(id){ items=items.filter(x=>x.id!==id); save(); render(); }
+
+  window.note_render = function render(){
+    if (!loaded) return;
+    if (document.getElementById('mainnav').querySelector('[data-page="note"]').classList.contains('active')) {
+      document.getElementById('statRow1').firstElementChild.textContent='고정';
+      document.getElementById('stat1').textContent = items.filter(n=>n.pinned).length;
+      document.getElementById('statRow2').firstElementChild.textContent='전체';
+      document.getElementById('stat2').textContent = items.length;
+    }
+    let filtered = items;
+    if (filter==='pinned') filtered = items.filter(n=>n.pinned);
+    else if (filter==='회사'||filter==='개인') filtered = items.filter(n=>(n.scope||'회사')===filter);
+    filtered = filtered.slice().sort((a,b)=>{ if(a.pinned!==b.pinned) return a.pinned?-1:1; return b.createdAt-a.createdAt; });
+    if (filtered.length===0){ listEl.innerHTML=`<div class="empty">기록된 메모가 없습니다</div>`; return; }
+    listEl.innerHTML = filtered.map(n=>`<div class="note ${n.pinned?'pinned':''}" data-id="${n.id}">
+      <div class="note-head">
+        <div class="note-title">${escapeHtml(n.title)}</div>
+        <div class="note-actions">
+          <button class="icon-btn pin-btn ${n.pinned?'active':''}" data-action="pin">${n.pinned?'★':'☆'}</button>
+          <button class="icon-btn del-btn" data-action="delete">×</button>
+        </div>
+      </div>
+      ${n.content?`<div class="note-content">${escapeHtml(n.content)}</div>`:''}
+      <div class="note-meta">
+        <span class="tag ${n.scope==='개인'?'personal':'work'}">${n.scope||'회사'}</span>
+        <span class="date-tag">${formatDate(n.createdAt)}</span>
+      </div>
+    </div>`).join('');
+  };
+  const render = window.note_render;
+  listEl.addEventListener('click', e=>{
+    const el=e.target.closest('.note'); if(!el) return;
+    const a=e.target.closest('[data-action]'); if(!a) return;
+    if(a.dataset.action==='pin') togglePin(el.dataset.id);
+    if(a.dataset.action==='delete') del(el.dataset.id);
+  });
+  addBtn.addEventListener('click', add);
+  pinToggle.addEventListener('click', ()=>{ pinned=!pinned; pinToggle.classList.toggle('active', pinned); });
+  scopeToggle.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    scope=b.dataset.s;
+    scopeToggle.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  tabsEl.addEventListener('click', e=>{
+    const t=e.target.closest('.tab'); if(!t) return;
+    filter=t.dataset.filter;
+    tabsEl.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); render();
+  });
+  load();
+})();
+
+(function(){
+  const KEY='goals';
+  let items=[], filter='all', scope='회사', loaded=false;
+  const listEl=document.getElementById('goal_list');
+  const titleInput=document.getElementById('goal_title');
+  const descInput=document.getElementById('goal_desc');
+  const statusSel=document.getElementById('goal_status');
+  const dueInput=document.getElementById('goal_due');
+  const progressInput=document.getElementById('goal_progress');
+  const progressVal=document.getElementById('goal_progressVal');
+  const addBtn=document.getElementById('goal_addBtn');
+  const scopeToggle=document.getElementById('goal_scopeToggle');
+  const tabsEl=document.getElementById('goal_tabs');
+
+  progressInput.addEventListener('input', ()=>{ progressVal.textContent = progressInput.value+'%'; });
+
+  async function load(){
+    try{ const r=await window.storage.get(KEY,false); items=r&&r.value?JSON.parse(r.value):[]; }catch(e){ items=[]; }
+    loaded=true; render();
+  }
+  async function save(){ try{ await window.storage.set(KEY, JSON.stringify(items), false); }catch(e){} }
+  function add(){
+    const title=titleInput.value.trim(); if(!title) return;
+    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), title, desc:descInput.value.trim(), status:statusSel.value, due:dueInput.value||null, progress:parseInt(progressInput.value,10), scope, createdAt:Date.now() });
+    titleInput.value=''; descInput.value=''; dueInput.value=''; progressInput.value=0; progressVal.textContent='0%'; statusSel.value='진행중';
+    save(); render(); titleInput.focus();
+  }
+  function del(id){ items=items.filter(x=>x.id!==id); save(); render(); }
+  function updateProgress(id, val){
+    const g=items.find(x=>x.id===id);
+    if(g){ g.progress=val; if(val>=100 && g.status!=='완료') g.status='완료'; save(); render(); }
+  }
+
+  window.goal_render = function render(){
+    if (!loaded) return;
+    if (document.getElementById('mainnav').querySelector('[data-page="goal"]').classList.contains('active')) {
+      document.getElementById('statRow1').firstElementChild.textContent='진행중';
+      document.getElementById('stat1').textContent = items.filter(g=>g.status==='진행중').length;
+      document.getElementById('statRow2').firstElementChild.textContent='완료';
+      document.getElementById('stat2').textContent = items.filter(g=>g.status==='완료').length;
+    }
+    let filtered;
+    if (filter==='all') filtered = items;
+    else if (filter==='회사'||filter==='개인') filtered = items.filter(g=>(g.scope||'회사')===filter);
+    else filtered = items.filter(g=>g.status===filter);
+    filtered = filtered.slice().sort((a,b)=>{
+      if (a.status!==b.status){ const order={'진행중':0,'보류':1,'완료':2}; return order[a.status]-order[b.status]; }
+      const ad=a.due||'9999-99-99', bd=b.due||'9999-99-99';
+      if (ad!==bd) return ad<bd?-1:1;
+      return b.createdAt-a.createdAt;
+    });
+    if (filtered.length===0){ listEl.innerHTML=`<div class="empty">등록된 목표가 없습니다</div>`; return; }
+    const today=todayISO();
+    listEl.innerHTML = filtered.map(g=>{
+      const overdue = g.due && g.due<today && g.status!=='완료';
+      return `<div class="goal status-${g.status}" data-id="${g.id}">
+        <div class="goal-head">
+          <div>
+            <div class="goal-title">${escapeHtml(g.title)}</div>
+            <div class="goal-tags">
+              <span class="tag ${g.scope==='개인'?'personal':'work'}">${g.scope||'회사'}</span>
+              <span class="tag status-${g.status}">${g.status}</span>
+              ${g.due?`<span class="due-tag ${overdue?'overdue':''}">기한 ${g.due}${overdue?' 초과':''}</span>`:''}
+            </div>
+          </div>
+          <button class="del-btn" data-action="delete">×</button>
+        </div>
+        ${g.desc?`<div class="goal-desc">${escapeHtml(g.desc)}</div>`:''}
+        <div class="goal-progress">
+          <div class="bar-track"><div class="bar-fill" style="width:${g.progress}%"></div></div>
+          <div class="bar-label"><span>진행률</span><span>${g.progress}%</span></div>
+          <input type="range" min="0" max="100" step="5" value="${g.progress}" data-action="progress" style="width:100%; margin-top:4px; accent-color:#2F5D8A;">
+        </div>
+      </div>`;
+    }).join('');
+  };
+  const render = window.goal_render;
+  listEl.addEventListener('click', e=>{
+    const el=e.target.closest('.goal'); if(!el) return;
+    const a=e.target.closest('[data-action]');
+    if(a && a.dataset.action==='delete') del(el.dataset.id);
+  });
+  listEl.addEventListener('input', e=>{
+    if (e.target.dataset.action==='progress'){ const el=e.target.closest('.goal'); updateProgress(el.dataset.id, parseInt(e.target.value,10)); }
+  });
+  addBtn.addEventListener('click', add);
+  scopeToggle.addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    scope=b.dataset.s;
+    scopeToggle.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+  tabsEl.addEventListener('click', e=>{
+    const t=e.target.closest('.tab'); if(!t) return;
+    filter=t.dataset.filter;
+    tabsEl.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active'); render();
+  });
+  load();
+})();
+
+(function(){
+  const nav = document.getElementById('mainnav');
+  const appName = '개인 업무관리';
+  const titles = { todo:'할일', log:'업무일지', meeting:'회의록', note:'인사이트 메모', goal:'목표관리' };
+  nav.addEventListener('click', e=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    const page = btn.dataset.page;
+    nav.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-'+page).classList.add('active');
+    document.getElementById('pageTitle').textContent = appName + ' · ' + titles[page];
+    if (page==='todo' && window.todo_render) window.todo_render();
+    if (page==='log' && window.log_render) window.log_render();
+    if (page==='meeting' && window.meet_render) window.meet_render();
+    if (page==='note' && window.note_render) window.note_render();
+    if (page==='goal' && window.goal_render) window.goal_render();
+  });
+})();
+
+(function(){
+  const APP_PASSWORD = '9361';
+  const overlay = document.getElementById('lockOverlay');
+  const sheet = document.getElementById('mainSheet');
+  const input = document.getElementById('lockInput');
+  const btn = document.getElementById('lockBtn');
+  const errEl = document.getElementById('lockError');
+
+  function tryUnlock() {
+    if (input.value === APP_PASSWORD) {
+      sessionStorage.setItem('wm_unlocked', '1');
+      overlay.style.display = 'none';
+      sheet.style.display = 'block';
+    } else {
+      errEl.textContent = '비밀번호가 올바르지 않습니다';
+      input.value = '';
+      input.focus();
+    }
+  }
+
+  if (sessionStorage.getItem('wm_unlocked') === '1') {
+    overlay.style.display = 'none';
+    sheet.style.display = 'block';
+  }
+
+  btn.addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+  input.focus();
+})();
+</script>
+</body>
+</html>
