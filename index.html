@@ -542,6 +542,16 @@
     <div class="page" id="page-diary">
       <div class="addform">
         <textarea id="diary_input" placeholder="오늘 하루를 기록하세요" maxlength="3000"></textarea>
+        <div class="rec-box">
+          <div class="rec-controls">
+            <button type="button" class="rec-btn" id="diary_recBtn">🎙 녹음 시작</button>
+            <button type="button" class="rec-btn summarize" id="diary_insertBtn" disabled>일기에 넣기</button>
+            <button type="button" class="rec-btn summarize" id="diary_copyBtn" disabled>복사</button>
+            <button type="button" class="rec-btn summarize" id="diary_clearRecBtn" disabled style="background:var(--ink-soft);">지우기</button>
+            <span class="rec-status" id="diary_recStatus"></span>
+          </div>
+          <div class="rec-transcript" id="diary_transcript" style="display:none;"></div>
+        </div>
         <div class="row">
           <input type="date" id="diary_date">
           <button class="add-btn" id="diary_addBtn">일기 추가</button>
@@ -1232,14 +1242,20 @@ window.storage = {
     recognition.continuous = true;
     recognition.interimResults = true;
     let baseLen = currentTranscript.length;
+    let finalText = '';
+    let processedIndex = 0;
     recognition.onresult = (event) => {
-      let final = '', interim = '';
-      for (let i = 0; i < event.results.length; i++) {
+      let interim = '';
+      for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += text;
-        else interim += text;
+        if (event.results[i].isFinal) {
+          finalText += text;
+          processedIndex = i + 1;
+        } else {
+          interim += text;
+        }
       }
-      currentTranscript = currentTranscript.slice(0, baseLen) + final;
+      currentTranscript = currentTranscript.slice(0, baseLen) + finalText;
       transcriptEl.style.display = 'block';
       transcriptEl.textContent = (currentTranscript + ' ' + interim).trim();
       transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -1507,14 +1523,20 @@ window.storage = {
     noteRecognition.interimResults = true;
     let baseLen = noteTranscript.length;
     let lastError = null;
+    let finalText = '';
+    let processedIndex = 0;
     noteRecognition.onresult = (event) => {
-      let final = '', interim = '';
-      for (let i = 0; i < event.results.length; i++) {
+      let interim = '';
+      for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += text;
-        else interim += text;
+        if (event.results[i].isFinal) {
+          finalText += text;
+          processedIndex = i + 1;
+        } else {
+          interim += text;
+        }
       }
-      noteTranscript = noteTranscript.slice(0, baseLen) + final;
+      noteTranscript = noteTranscript.slice(0, baseLen) + finalText;
       transcriptEl.style.display = 'block';
       transcriptEl.textContent = (noteTranscript + ' ' + interim).trim();
       transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -1649,17 +1671,19 @@ window.storage = {
     if (filtered.length===0){ listEl.innerHTML=`<div class="empty">기록된 메모가 없습니다</div>`; return; }
     listEl.innerHTML = filtered.map(n=>`<div class="note ${n.pinned?'pinned':''}" data-id="${n.id}">
       <div class="note-head">
-        <div class="note-title">${escapeHtml(n.title)}</div>
+        <div class="note-title" style="cursor:pointer;" data-action="toggleBody">${escapeHtml(n.title)}</div>
         <div class="note-actions">
           <button class="icon-btn pin-btn ${n.pinned?'active':''}" data-action="pin">${n.pinned?'★':'☆'}</button>
           <button class="icon-btn" data-action="edit" title="수정">✎</button>
           <button class="icon-btn del-btn" data-action="delete">×</button>
         </div>
       </div>
-      ${n.content?`<div class="note-content">${escapeHtml(n.content)}</div>`:''}
-      <div class="note-meta">
-        <span class="tag ${n.scope==='개인'?'personal':'work'}">${n.scope||'회사'}</span>
-        <span class="date-tag">${formatDate(n.createdAt)}</span>
+      <div class="rec-transcript" style="display:none;">
+        ${n.content?`<div class="note-content">${escapeHtml(n.content)}</div>`:''}
+        <div class="note-meta">
+          <span class="tag ${n.scope==='개인'?'personal':'work'}">${n.scope||'회사'}</span>
+          <span class="date-tag">${formatDate(n.createdAt)}</span>
+        </div>
       </div>
     </div>`).join('');
   };
@@ -1670,6 +1694,10 @@ window.storage = {
     if(a.dataset.action==='pin') togglePin(el.dataset.id);
     if(a.dataset.action==='delete') del(el.dataset.id);
     if(a.dataset.action==='edit') startEdit(el.dataset.id);
+    if(a.dataset.action==='toggleBody'){
+      const box = a.parentElement.nextElementSibling;
+      if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
   });
   listEl.addEventListener('dblclick', e=>{
     const el=e.target.closest('.note'); if(!el) return;
@@ -2450,6 +2478,7 @@ window.storage = {
 (function(){
   const KEY='diary_entries';
   let items=[], searchQuery='', loaded=false, dateLimit=30;
+  let diaryTranscript = '', diaryRecognizing = false, diaryRecognition = null;
   window.__gs_diary = () => items;
   window.__restore_diary = (data) => { items.unshift(data); save(); if (window.diary_render) window.diary_render(); };
   const groupsEl=document.getElementById('diary_groups');
@@ -2459,8 +2488,120 @@ window.storage = {
   const cancelEditBtn=document.getElementById('diary_cancelEditBtn');
   const searchInput=document.getElementById('diary_search');
   const importBtn=document.getElementById('diary_importBtn');
+  const diaryRecBtn=document.getElementById('diary_recBtn');
+  const diaryInsertBtn=document.getElementById('diary_insertBtn');
+  const diaryCopyBtn=document.getElementById('diary_copyBtn');
+  const diaryClearRecBtn=document.getElementById('diary_clearRecBtn');
+  const diaryRecStatus=document.getElementById('diary_recStatus');
+  const diaryTranscriptEl=document.getElementById('diary_transcript');
   dateInput.value=todayISO();
   let editingId = null;
+
+  const DiarySpeechRecognitionCls = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!DiarySpeechRecognitionCls) {
+    diaryRecBtn.disabled = true;
+    diaryRecStatus.textContent = '이 브라우저는 음성인식을 지원하지 않습니다 (크롬 권장)';
+  }
+
+  function updateDiaryRecButtons() {
+    const has = diaryTranscript.trim().length > 0;
+    diaryInsertBtn.disabled = !has;
+    diaryCopyBtn.disabled = !has;
+    diaryClearRecBtn.disabled = !has;
+  }
+
+  function startDiaryRecording() {
+    if (!DiarySpeechRecognitionCls) return;
+    diaryRecognizing = true;
+    diaryRecBtn.textContent = '⏹ 녹음 중지';
+    diaryRecBtn.classList.add('recording');
+    diaryRecStatus.textContent = '녹음 중... (말씀하시면 실시간으로 텍스트화됩니다)';
+
+    diaryRecognition = new DiarySpeechRecognitionCls();
+    diaryRecognition.lang = 'ko-KR';
+    diaryRecognition.continuous = true;
+    diaryRecognition.interimResults = true;
+    let baseLen = diaryTranscript.length;
+    let lastError = null;
+    let finalText = '';
+    let processedIndex = 0;
+    diaryRecognition.onresult = (event) => {
+      let interim = '';
+      for (let i = processedIndex; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += text;
+          processedIndex = i + 1;
+        } else {
+          interim += text;
+        }
+      }
+      diaryTranscript = diaryTranscript.slice(0, baseLen) + finalText;
+      diaryTranscriptEl.style.display = 'block';
+      diaryTranscriptEl.textContent = (diaryTranscript + ' ' + interim).trim();
+      diaryTranscriptEl.scrollTop = diaryTranscriptEl.scrollHeight;
+      updateDiaryRecButtons();
+    };
+    diaryRecognition.onerror = (event) => {
+      lastError = event.error;
+      if (event.error === 'not-allowed' || event.error === 'audio-capture' || event.error === 'service-not-allowed') {
+        diaryRecognizing = false;
+        diaryRecBtn.textContent = '🎙 녹음 시작';
+        diaryRecBtn.classList.remove('recording');
+        diaryRecStatus.textContent = '마이크 권한이 차단되어 있습니다. 크롬 주소창 왼쪽 자물쇠 아이콘 → 마이크 권한을 "허용"으로 바꾼 뒤 새로고침해주세요.';
+      }
+    };
+    diaryRecognition.onend = () => {
+      if (diaryRecognizing) {
+        diaryRecognizing = false;
+        diaryRecBtn.textContent = '🎙 녹음 시작';
+        diaryRecBtn.classList.remove('recording');
+        diaryRecStatus.textContent = lastError
+          ? ('인식 중단 (오류: ' + lastError + ') — 다시 눌러주세요')
+          : (diaryTranscript.trim() ? '인식이 일시 중단됐어요 — 이어가려면 다시 눌러주세요' : '녹음이 시작되자마자 종료됐어요 — 다시 눌러보세요');
+      }
+    };
+    try { diaryRecognition.start(); } catch(e) {}
+  }
+
+  function stopDiaryRecording() {
+    diaryRecognizing = false;
+    if (diaryRecognition) { try { diaryRecognition.stop(); } catch(e) {} }
+    diaryRecBtn.textContent = '🎙 녹음 시작';
+    diaryRecBtn.classList.remove('recording');
+    diaryRecStatus.textContent = diaryTranscript.trim() ? '녹음 종료' : '';
+  }
+
+  function insertDiaryTranscript() {
+    if (!diaryTranscript.trim()) return;
+    input.value = input.value.trim()
+      ? (input.value.trim() + '\n\n' + diaryTranscript.trim())
+      : diaryTranscript.trim();
+    diaryRecStatus.textContent = '일기 내용란에 추가했습니다';
+  }
+
+  async function copyDiaryTranscript() {
+    if (!diaryTranscript.trim()) return;
+    try {
+      await navigator.clipboard.writeText(diaryTranscript.trim());
+      diaryRecStatus.textContent = '복사 완료!';
+    } catch (e) {
+      diaryRecStatus.textContent = '복사 실패 — 받아쓰기 내용을 길게 눌러 직접 복사해주세요';
+    }
+  }
+
+  function clearDiaryTranscript() {
+    diaryTranscript = '';
+    diaryTranscriptEl.style.display = 'none';
+    diaryTranscriptEl.textContent = '';
+    updateDiaryRecButtons();
+    diaryRecStatus.textContent = '받아쓰기 내용을 지웠습니다';
+  }
+
+  diaryRecBtn.addEventListener('click', () => { diaryRecognizing ? stopDiaryRecording() : startDiaryRecording(); });
+  diaryInsertBtn.addEventListener('click', insertDiaryTranscript);
+  diaryCopyBtn.addEventListener('click', copyDiaryTranscript);
+  diaryClearRecBtn.addEventListener('click', clearDiaryTranscript);
 
   function formatDateLabel(iso){
     const d=new Date(iso+'T00:00:00'); const days=['일','월','화','수','목','금','토'];
