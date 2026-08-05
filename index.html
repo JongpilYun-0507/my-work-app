@@ -678,6 +678,19 @@ function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+// 음성인식 결과가 재시작/재확정되면서 앞부분이 겹치는 경우, 겹치는 부분만 잘라내고 이어붙임
+function trimSpeechOverlap(existingText, incomingText) {
+  const a = existingText.trimEnd();
+  const b = incomingText;
+  const bTrimStart = b.replace(/^\s+/, '');
+  const maxK = Math.min(a.length, bTrimStart.length, 40);
+  for (let k = maxK; k > 0; k--) {
+    if (a.slice(-k) === bTrimStart.slice(0, k)) {
+      return bTrimStart.slice(k);
+    }
+  }
+  return b;
+}
 (function(){
   const overlay = document.getElementById('fullviewOverlay');
   const titleEl = document.getElementById('fullviewTitle');
@@ -1185,6 +1198,7 @@ window.storage = {
   let currentTranscript = '';
   let recognizing = false;
   let recognition = null;
+  let recRestartCount = 0;
   const listEl=document.getElementById('meet_list');
   const titleInput=document.getElementById('meet_title');
   const dateInput=document.getElementById('meet_date');
@@ -1245,13 +1259,13 @@ window.storage = {
     let finalText = '';
     let processedIndex = 0;
     recognition.onresult = (event) => {
+      recRestartCount = 0;
       let interim = '';
       for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          const trimmed = text.trim();
-          const soFar = (currentTranscript.slice(0, baseLen) + finalText).trim();
-          if (trimmed && !soFar.endsWith(trimmed)) finalText += text;
+          const soFar = currentTranscript.slice(0, baseLen) + finalText;
+          finalText += trimSpeechOverlap(soFar, text);
           processedIndex = i + 1;
         } else {
           interim += text;
@@ -1275,14 +1289,18 @@ window.storage = {
       // 다른 오류는 onend에서 코드와 함께 표시
     };
     recognition.onend = () => {
-      // 자동 재시작 없음 — 끊기면 사용자가 다시 눌러서 이어감
-      if (recognizing) {
+      if (!recognizing) return;
+      if (recRestartCount < 8) {
+        recRestartCount++;
+        recStatus.textContent = '녹음 중... (잠시 끊겼다가 자동으로 이어졌어요)';
+        setTimeout(() => { if (recognizing) startRecording(); }, 300);
+      } else {
         recognizing = false;
         recBtn.textContent = '🎙 녹음 시작';
         recBtn.classList.remove('recording');
         recStatus.textContent = lastError
           ? ('인식 중단 (오류: ' + lastError + ') — 다시 눌러주세요')
-          : (currentTranscript.trim() ? '인식이 일시 중단됐어요 — 이어가려면 다시 눌러주세요' : '녹음이 시작되자마자 종료됐어요 — 다시 눌러보세요');
+          : '계속 끊겨서 자동 재시작을 멈췄어요 — 다시 눌러보세요';
       }
     };
     try { recognition.start(); } catch(e) {}
@@ -1483,7 +1501,7 @@ window.storage = {
   let items=[], filter='all', pinned=false, scope='회사', searchQuery='', loaded=false;
   window.__gs_note = () => items;
   window.__restore_note = (data) => { items.unshift(data); save(); if (window.note_render) window.note_render(); };
-  let noteTranscript = '', noteRecognizing = false, noteRecognition = null;
+  let noteTranscript = '', noteRecognizing = false, noteRecognition = null, noteRestartCount = 0;
   const listEl=document.getElementById('note_list');
   const titleInput=document.getElementById('note_title');
   const contentInput=document.getElementById('note_content');
@@ -1528,13 +1546,13 @@ window.storage = {
     let finalText = '';
     let processedIndex = 0;
     noteRecognition.onresult = (event) => {
+      noteRestartCount = 0;
       let interim = '';
       for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          const trimmed = text.trim();
-          const soFar = (noteTranscript.slice(0, baseLen) + finalText).trim();
-          if (trimmed && !soFar.endsWith(trimmed)) finalText += text;
+          const soFar = noteTranscript.slice(0, baseLen) + finalText;
+          finalText += trimSpeechOverlap(soFar, text);
           processedIndex = i + 1;
         } else {
           interim += text;
@@ -1556,13 +1574,18 @@ window.storage = {
       }
     };
     noteRecognition.onend = () => {
-      if (noteRecognizing) {
+      if (!noteRecognizing) return;
+      if (noteRestartCount < 8) {
+        noteRestartCount++;
+        recStatus.textContent = '녹음 중... (잠시 끊겼다가 자동으로 이어졌어요)';
+        setTimeout(() => { if (noteRecognizing) startNoteRecording(); }, 300);
+      } else {
         noteRecognizing = false;
         recBtn.textContent = '🎙 녹음 시작';
         recBtn.classList.remove('recording');
         recStatus.textContent = lastError
           ? ('인식 중단 (오류: ' + lastError + ') — 다시 눌러주세요')
-          : (noteTranscript.trim() ? '인식이 일시 중단됐어요 — 이어가려면 다시 눌러주세요' : '녹음이 시작되자마자 종료됐어요 — 다시 눌러보세요');
+          : '계속 끊겨서 자동 재시작을 멈췄어요 — 다시 눌러보세요';
       }
     };
     try { noteRecognition.start(); } catch(e) {}
@@ -2482,7 +2505,7 @@ window.storage = {
 (function(){
   const KEY='diary_entries';
   let items=[], searchQuery='', loaded=false, dateLimit=30;
-  let diaryTranscript = '', diaryRecognizing = false, diaryRecognition = null;
+  let diaryTranscript = '', diaryRecognizing = false, diaryRecognition = null, diaryRestartCount = 0;
   window.__gs_diary = () => items;
   window.__restore_diary = (data) => { items.unshift(data); save(); if (window.diary_render) window.diary_render(); };
   const groupsEl=document.getElementById('diary_groups');
@@ -2530,13 +2553,13 @@ window.storage = {
     let finalText = '';
     let processedIndex = 0;
     diaryRecognition.onresult = (event) => {
+      diaryRestartCount = 0;
       let interim = '';
       for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          const trimmed = text.trim();
-          const soFar = (diaryTranscript.slice(0, baseLen) + finalText).trim();
-          if (trimmed && !soFar.endsWith(trimmed)) finalText += text;
+          const soFar = diaryTranscript.slice(0, baseLen) + finalText;
+          finalText += trimSpeechOverlap(soFar, text);
           processedIndex = i + 1;
         } else {
           interim += text;
@@ -2558,13 +2581,18 @@ window.storage = {
       }
     };
     diaryRecognition.onend = () => {
-      if (diaryRecognizing) {
+      if (!diaryRecognizing) return;
+      if (diaryRestartCount < 8) {
+        diaryRestartCount++;
+        diaryRecStatus.textContent = '녹음 중... (잠시 끊겼다가 자동으로 이어졌어요)';
+        setTimeout(() => { if (diaryRecognizing) startDiaryRecording(); }, 300);
+      } else {
         diaryRecognizing = false;
         diaryRecBtn.textContent = '🎙 녹음 시작';
         diaryRecBtn.classList.remove('recording');
         diaryRecStatus.textContent = lastError
           ? ('인식 중단 (오류: ' + lastError + ') — 다시 눌러주세요')
-          : (diaryTranscript.trim() ? '인식이 일시 중단됐어요 — 이어가려면 다시 눌러주세요' : '녹음이 시작되자마자 종료됐어요 — 다시 눌러보세요');
+          : '계속 끊겨서 자동 재시작을 멈췄어요 — 다시 눌러보세요';
       }
     };
     try { diaryRecognition.start(); } catch(e) {}
