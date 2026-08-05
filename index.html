@@ -648,11 +648,21 @@ window.storage = {
       summarizeBtn.disabled = currentTranscript.trim().length === 0;
     };
     recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'audio-capture' || event.error === 'service-not-allowed') {
+        recognizing = false;
+        recBtn.textContent = '🎙 녹음 시작';
+        recBtn.classList.remove('recording');
+        recStatus.textContent = '마이크 권한이 차단되어 있습니다. 크롬 주소창 왼쪽 자물쇠 아이콘 → 마이크 권한을 "허용"으로 바꾼 뒤 새로고침해주세요.';
+        return;
+      }
       recStatus.textContent = '음성인식 오류: ' + event.error;
     };
     recognition.onend = () => {
       if (recognizing) {
-        try { recognition.start(); } catch(e) {}
+        recStatus.textContent = '녹음 중... (일시 중단 감지 — 재연결)';
+        setTimeout(() => {
+          if (recognizing) { try { recognition.start(); } catch(e) {} }
+        }, 600);
       }
     };
     recognizing = true;
