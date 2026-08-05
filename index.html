@@ -1249,7 +1249,9 @@ window.storage = {
       for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalText += text;
+          const trimmed = text.trim();
+          const soFar = (currentTranscript.slice(0, baseLen) + finalText).trim();
+          if (trimmed && !soFar.endsWith(trimmed)) finalText += text;
           processedIndex = i + 1;
         } else {
           interim += text;
@@ -1530,7 +1532,9 @@ window.storage = {
       for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalText += text;
+          const trimmed = text.trim();
+          const soFar = (noteTranscript.slice(0, baseLen) + finalText).trim();
+          if (trimmed && !soFar.endsWith(trimmed)) finalText += text;
           processedIndex = i + 1;
         } else {
           interim += text;
@@ -2530,7 +2534,9 @@ window.storage = {
       for (let i = processedIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalText += text;
+          const trimmed = text.trim();
+          const soFar = (diaryTranscript.slice(0, baseLen) + finalText).trim();
+          if (trimmed && !soFar.endsWith(trimmed)) finalText += text;
           processedIndex = i + 1;
         } else {
           interim += text;
