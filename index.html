@@ -235,6 +235,7 @@
   .bar-fill { height: 100%; background: var(--blueprint); }
   .goal.status-완료 .bar-fill { background: var(--done); }
   .bar-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); margin-top: 4px; display: flex; justify-content: space-between; }
+  .gs-word-highlight { color:#B3261E !important; font-weight:800 !important; background:#FFE9A8 !important; border-radius:2px; padding:0 2px; box-shadow:0 0 0 1px rgba(179,38,30,0.35); }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -248,6 +249,9 @@
     <div id="lockError" style="color:#E08A6B; font-family:'IBM Plex Mono',monospace; font-size:12px; height:16px;"></div>
   </div>
   <div class="sheet" id="mainSheet" style="display:none;">
+    <div id="localFileWarning" style="display:none; background:#E08A6B; color:#fff; font-size:13px; padding:10px 14px; text-align:center;">
+      ⚠️ 지금 다운로드된 파일을 직접 열어서 사용 중이에요. 최신 내용 확인과 공유 링크가 정상 작동하려면 <b>깃허브에 올린 주소</b>로 접속해주세요.
+    </div>
     <div class="titleblock">
       <div class="tb-main">
         <div class="tb-eyebrow">WORK MANAGEMENT</div>
@@ -426,6 +430,7 @@
             <option value="완료">완료</option>
           </select>
           <input type="date" id="goal_due">
+          <span id="goal_startDisplay" style="font-size:12px; color:var(--ink-soft); align-self:center; white-space:nowrap;">시작일: 오늘 자동 기록</span>
           <div class="scope-toggle" id="goal_scopeToggle">
             <button type="button" data-s="회사" class="active">회사</button>
             <button type="button" data-s="개인">개인</button>
@@ -662,6 +667,30 @@
         <button class="fullview-close" id="fullviewClose">×</button>
       </div>
       <div class="fullview-content" id="fullviewContent"></div>
+      <div style="padding:10px 4px 0;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button class="add-btn" id="fullviewShareBtn" style="background:var(--blueprint);">🔗 링크로 공유</button>
+          <span id="fullviewShareStatus" style="font-size:12px; color:var(--ink-soft);"></span>
+        </div>
+        <div id="fullviewShareRow" style="display:none; align-items:center; gap:8px; margin-top:8px;">
+          <input type="text" id="fullviewShareLinkInput" readonly style="flex:1; min-width:0; font-size:13px; padding:8px; border:1px solid var(--paper-line); border-radius:var(--radius,4px);">
+          <button class="add-btn" id="fullviewShareCopyBtn">복사</button>
+        </div>
+        <div id="fullviewMoveRow" style="display:none; flex-direction:column; gap:8px; margin-top:10px; padding-top:10px; border-top:1px solid var(--paper-line);">
+          <div id="fullviewMoveOptions" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+          <button class="add-btn" id="fullviewMoveBtn" style="background:var(--ink-soft); align-self:flex-start;">다른 메뉴로 이동</button>
+        </div>
+        <div id="fullviewMoveStatus" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sharedPageView" style="display:none; position:fixed; inset:0; background:var(--paper, #F7F3EC); z-index:10000; overflow-y:auto;">
+    <div style="max-width:640px; margin:0 auto; padding:40px 20px;">
+      <div style="font-size:12px; color:var(--ink-soft, #8a8478); margin-bottom:18px;">개인 업무관리 · 공유된 내용</div>
+      <div id="sharedPageTitle" style="font-size:22px; font-weight:700; margin-bottom:6px;"></div>
+      <div id="sharedPageMeta" style="font-size:13px; color:var(--ink-soft, #8a8478); margin-bottom:20px;"></div>
+      <div id="sharedPageContent" style="white-space:pre-wrap; line-height:1.7; font-size:15px;"></div>
     </div>
   </div>
 
@@ -691,23 +720,161 @@ function trimSpeechOverlap(existingText, incomingText) {
   }
   return b;
 }
+// 두 날짜(YYYY-MM-DD) 사이의 총 일수와 개월/일 환산값을 계산
+function calcDuration(startStr, endStr) {
+  if (!startStr || !endStr) return null;
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  if (isNaN(start) || isNaN(end) || end < start) return null;
+  const totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+  let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  let days = end.getDate() - start.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonthLastDay = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+    days += prevMonthLastDay;
+  }
+  return { totalDays, months, days };
+}
+function formatDuration(startStr, endStr) {
+  const d = calcDuration(startStr, endStr);
+  if (!d) return '';
+  return `총 ${d.totalDays}일(${d.months}개월 ${d.days}일)`;
+}
 (function(){
   const overlay = document.getElementById('fullviewOverlay');
   const titleEl = document.getElementById('fullviewTitle');
   const metaEl = document.getElementById('fullviewMeta');
   const contentEl = document.getElementById('fullviewContent');
   const closeBtn = document.getElementById('fullviewClose');
-  window.__showFullView = (title, meta, content) => {
+  const shareBtn = document.getElementById('fullviewShareBtn');
+  const shareStatus = document.getElementById('fullviewShareStatus');
+  const shareRow = document.getElementById('fullviewShareRow');
+  const shareLinkInput = document.getElementById('fullviewShareLinkInput');
+  const shareCopyBtn = document.getElementById('fullviewShareCopyBtn');
+  const moveRow = document.getElementById('fullviewMoveRow');
+  const moveOptionsEl = document.getElementById('fullviewMoveOptions');
+  const moveBtn = document.getElementById('fullviewMoveBtn');
+  const moveStatus = document.getElementById('fullviewMoveStatus');
+  const MODULE_LABELS = {
+    todo: '할일', log: '업무일지', meeting: '회의록', note: '인사이트',
+    goal: '목표관리', important: '중요기록', god: 'WITH GOD', diary: '일기장'
+  };
+  let selectedMoveTarget = null;
+  function genId(){ return 'id' + Date.now() + Math.random().toString(36).slice(2,7); }
+  function buildItemFor(targetModule, src) {
+    const title = src.title || '(제목 없음)';
+    const content = src.content || '';
+    const today = todayISO();
+    const base = { id: genId(), createdAt: Date.now() };
+    switch (targetModule) {
+      case 'todo': return Object.assign(base, { text: content || title, priority:'일반', scope:'회사', due:null, done:false });
+      case 'log': return Object.assign(base, { text: content ? (title + (content?'\n'+content:'')) : title, date: today, scope:'회사' });
+      case 'meeting': return Object.assign(base, { title, kind:'내부', type:'프로젝트', projectName:'', date: today, attendees:'', content, transcript:'' });
+      case 'note': return Object.assign(base, { title, content, pinned:false, scope:'회사' });
+      case 'goal': return Object.assign(base, { title, desc: content, status:'진행중', due:null, startDate: todayISO(), progress:0, scope:'회사' });
+      case 'important': return Object.assign(base, { title, content, scope:'회사' });
+      case 'god': return Object.assign(base, { title, verse:'', content, date: today });
+      case 'diary': return Object.assign(base, { text: content ? (title + '\n\n' + content) : title, date: today });
+      default: return null;
+    }
+  }
+  let current = { title: '', meta: '', content: '', source: null };
+  window.__showFullView = (title, meta, content, source) => {
+    current = { title: title || '', meta: meta || '', content: content || '', source: source || null };
     titleEl.textContent = title || '';
     if (meta) { metaEl.textContent = meta; metaEl.style.display = 'block'; }
     else { metaEl.textContent = ''; metaEl.style.display = 'none'; }
     contentEl.textContent = content || '';
+    shareStatus.textContent = '';
+    shareRow.style.display = 'none';
+    moveStatus.textContent = '';
+    if (current.source && MODULE_LABELS[current.source.module]) {
+      const options = Object.keys(MODULE_LABELS).filter(k => k !== current.source.module);
+      selectedMoveTarget = null;
+      moveOptionsEl.innerHTML = options.map(k =>
+        `<button type="button" class="add-btn move-opt-btn" data-mod="${k}" style="padding:6px 12px; font-size:12px; background:var(--ink-soft);">${MODULE_LABELS[k]}</button>`
+      ).join('');
+      moveRow.style.display = 'flex';
+      moveStatus.textContent = '이동할 메뉴를 먼저 선택해주세요';
+    } else {
+      selectedMoveTarget = null;
+      moveRow.style.display = 'none';
+    }
     overlay.style.display = 'flex';
   };
   function closeFullView(){ overlay.style.display = 'none'; }
   closeBtn.addEventListener('click', closeFullView);
   overlay.addEventListener('click', e => { if (e.target === overlay) closeFullView(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.style.display !== 'none') closeFullView(); });
+  moveOptionsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.move-opt-btn');
+    if (!btn) return;
+    selectedMoveTarget = btn.dataset.mod;
+    moveOptionsEl.querySelectorAll('.move-opt-btn').forEach(b => {
+      b.style.background = (b.dataset.mod === selectedMoveTarget) ? 'var(--blueprint)' : 'var(--ink-soft)';
+    });
+    moveStatus.textContent = `"${MODULE_LABELS[selectedMoveTarget]}"(으)로 이동하려면 "다른 메뉴로 이동" 버튼을 눌러주세요`;
+  });
+  moveBtn.addEventListener('click', () => {
+    if (!current.source) return;
+    if (!selectedMoveTarget) { moveStatus.textContent = '먼저 옮길 메뉴를 선택해주세요'; return; }
+    const targetModule = selectedMoveTarget;
+    const restoreFn = window['__restore_' + targetModule];
+    const moveOutFn = window['__moveOut_' + current.source.module];
+    if (!restoreFn || !moveOutFn) { moveStatus.textContent = '이동 실패 — 지원되지 않는 메뉴입니다'; return; }
+    const newItem = buildItemFor(targetModule, current);
+    if (!newItem) { moveStatus.textContent = '이동 실패'; return; }
+    restoreFn(newItem);
+    moveOutFn(current.source.id);
+    moveStatus.textContent = `"${MODULE_LABELS[targetModule]}" 메뉴로 이동했어요`;
+    setTimeout(closeFullView, 700);
+  });
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e2) { return false; }
+    }
+  }
+  shareBtn.addEventListener('click', async () => {
+    shareStatus.textContent = '링크 만드는 중...';
+    shareRow.style.display = 'none';
+    try {
+      const shareId = 'sh' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      await window.storage.set('share_' + shareId, JSON.stringify({title:current.title, meta:current.meta, content:current.content}), true);
+      const HOSTED_BASE_URL = 'https://jongpilyun-0507.github.io/my-work-app/';
+      const url = HOSTED_BASE_URL + '?share=' + shareId;
+      shareLinkInput.value = url;
+      shareRow.style.display = 'flex';
+      shareLinkInput.focus();
+      shareLinkInput.setSelectionRange(0, url.length);
+      const copied = await copyText(url);
+      shareStatus.textContent = copied
+        ? '링크가 복사되었어요 — 바로 붙여넣기 하시면 됩니다'
+        : '자동 복사가 안 됐어요 — 아래 링크를 눌러 전체 선택한 뒤 "복사" 버튼을 눌러주세요';
+    } catch (e) {
+      shareStatus.textContent = '공유 링크 생성 실패 (저장소 연결을 확인해주세요)';
+    }
+  });
+  shareCopyBtn.addEventListener('click', async () => {
+    shareLinkInput.focus();
+    shareLinkInput.setSelectionRange(0, shareLinkInput.value.length);
+    const copied = await copyText(shareLinkInput.value);
+    shareStatus.textContent = copied ? '복사했어요!' : '복사에 실패했어요 — 링크를 길게 눌러 직접 복사해주세요';
+  });
 })();
 function formatToday() {
   const d = new Date();
@@ -820,6 +987,7 @@ window.storage = {
   let items = [], filter = 'all', priority = '일반', scope = '회사', searchQuery = '', loaded = false;
   window.__gs_todo = () => items;
   window.__restore_todo = (data) => { items.unshift(data); save(); if (window.todo_render) window.todo_render(); };
+  window.__moveOut_todo = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.todo_render) window.todo_render(); } };
   const listEl = document.getElementById('todo_list');
   const input = document.getElementById('todo_input');
   const dueInput = document.getElementById('todo_due');
@@ -961,7 +1129,7 @@ window.storage = {
     const el=e.target.closest('.task'); if(!el) return;
     const it = items.find(x=>x.id===el.dataset.id); if(!it) return;
     const metaParts = [it.scope||'회사']; if (it.due) metaParts.push('마감 '+it.due);
-    window.__showFullView('할일', metaParts.join(' · '), it.text);
+    window.__showFullView('할일', metaParts.join(' · '), it.text, {module:'todo', id:it.id});
   });
   cancelEditBtn.addEventListener('click', resetForm);
   addBtn.addEventListener('click', add);
@@ -993,6 +1161,18 @@ window.storage = {
   let items=[], filter='all', scope='회사', searchQuery='', loaded=false, dateLimit=30;
   window.__gs_log = () => items;
   window.__restore_log = (data) => { items.unshift(data); save(); if (window.log_render) window.log_render(); };
+  window.__moveOut_log = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.log_render) window.log_render(); } };
+  window.__expandDateLimit_log = (targetDate) => {
+    if (targetDate) {
+      filter = 'all'; searchQuery = ''; if (searchInput) searchInput.value = '';
+      const allDates = Array.from(new Set(items.map(e=>e.date))).sort((a,b)=> b<a?-1:b>a?1:0);
+      const idx = allDates.indexOf(targetDate);
+      if (idx >= 0 && idx + 1 > dateLimit) dateLimit = idx + 1;
+    } else {
+      dateLimit = Infinity;
+    }
+    if (window.log_render) window.log_render();
+  };
   const groupsEl=document.getElementById('log_groups');
   const input=document.getElementById('log_input');
   const dateInput=document.getElementById('log_date');
@@ -1113,7 +1293,7 @@ window.storage = {
     const el=e.target.closest('.entry'); if(!el) return;
     if (el.querySelector('textarea')) return;
     const it = items.find(x=>x.id===el.dataset.id); if(!it) return;
-    window.__showFullView(formatDateLabel(it.date), it.scope||'회사', it.text);
+    window.__showFullView(formatDateLabel(it.date), it.scope||'회사', it.text, {module:'log', id:it.id});
   });
   addBtn.addEventListener('click', add);
   scopeToggle.addEventListener('click', e=>{
@@ -1195,6 +1375,7 @@ window.storage = {
   let items=[], filter='all', kind='내부', searchQuery='', loaded=false;
   window.__gs_meet = () => items;
   window.__restore_meeting = (data) => { items.unshift(data); save(); if (window.meet_render) window.meet_render(); };
+  window.__moveOut_meeting = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.meet_render) window.meet_render(); } };
   let currentTranscript = '';
   let recognizing = false;
   let recognition = null;
@@ -1476,7 +1657,7 @@ window.storage = {
     const bodyParts = [];
     if (m.attendees) bodyParts.push('참석: ' + m.attendees);
     if (m.content) bodyParts.push(m.content);
-    window.__showFullView(m.title, meta, bodyParts.join('\n\n'));
+    window.__showFullView(m.title, meta, bodyParts.join('\n\n'), {module:'meeting', id:m.id});
   });
   addBtn.addEventListener('click', add);
   cancelEditBtn.addEventListener('click', resetForm);
@@ -1501,6 +1682,7 @@ window.storage = {
   let items=[], filter='all', pinned=false, scope='회사', searchQuery='', loaded=false;
   window.__gs_note = () => items;
   window.__restore_note = (data) => { items.unshift(data); save(); if (window.note_render) window.note_render(); };
+  window.__moveOut_note = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.note_render) window.note_render(); } };
   let noteTranscript = '', noteRecognizing = false, noteRecognition = null, noteRestartCount = 0;
   const listEl=document.getElementById('note_list');
   const titleInput=document.getElementById('note_title');
@@ -1729,7 +1911,7 @@ window.storage = {
   listEl.addEventListener('dblclick', e=>{
     const el=e.target.closest('.note'); if(!el) return;
     const n = items.find(x=>x.id===el.dataset.id); if(!n) return;
-    window.__showFullView(n.title, n.scope||'회사', n.content||'');
+    window.__showFullView(n.title, n.scope||'회사', n.content||'', {module:'note', id:n.id});
   });
   addBtn.addEventListener('click', add);
   cancelEditBtn.addEventListener('click', resetForm);
@@ -1755,11 +1937,13 @@ window.storage = {
   let items=[], filter='all', scope='회사', searchQuery='', loaded=false;
   window.__gs_goal = () => items;
   window.__restore_goal = (data) => { items.unshift(data); save(); if (window.goal_render) window.goal_render(); };
+  window.__moveOut_goal = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.goal_render) window.goal_render(); } };
   const listEl=document.getElementById('goal_list');
   const titleInput=document.getElementById('goal_title');
   const descInput=document.getElementById('goal_desc');
   const statusSel=document.getElementById('goal_status');
   const dueInput=document.getElementById('goal_due');
+  const startDisplay=document.getElementById('goal_startDisplay');
   const progressInput=document.getElementById('goal_progress');
   const progressVal=document.getElementById('goal_progressVal');
   const addBtn=document.getElementById('goal_addBtn');
@@ -1779,6 +1963,7 @@ window.storage = {
 
   function resetForm(){
     titleInput.value=''; descInput.value=''; dueInput.value=''; progressInput.value=0; progressVal.textContent='0%'; statusSel.value='진행중';
+    startDisplay.textContent = '시작일: 오늘 자동 기록';
     editingId = null;
     addBtn.textContent = '목표 추가';
     cancelEditBtn.style.display = 'none';
@@ -1790,10 +1975,11 @@ window.storage = {
       if (it) {
         it.title = title; it.desc = descInput.value.trim(); it.status = statusSel.value;
         it.due = dueInput.value || null; it.progress = parseInt(progressInput.value,10); it.scope = scope;
+        // 시작일(startDate)은 최초 작성일로 고정 — 수정 시에도 변경하지 않음
       }
       resetForm(); save(); render(); return;
     }
-    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), title, desc:descInput.value.trim(), status:statusSel.value, due:dueInput.value||null, progress:parseInt(progressInput.value,10), scope, createdAt:Date.now() });
+    items.unshift({ id:'id'+Date.now()+Math.random().toString(36).slice(2,7), title, desc:descInput.value.trim(), status:statusSel.value, due:dueInput.value||null, startDate: todayISO(), progress:parseInt(progressInput.value,10), scope, createdAt:Date.now() });
     titleInput.value=''; descInput.value=''; dueInput.value=''; progressInput.value=0; progressVal.textContent='0%'; statusSel.value='진행중';
     save(); render(); titleInput.focus();
   }
@@ -1804,6 +1990,7 @@ window.storage = {
     descInput.value = g.desc || '';
     statusSel.value = g.status;
     dueInput.value = g.due || '';
+    startDisplay.textContent = '시작일: ' + (g.startDate || new Date(g.createdAt).toISOString().slice(0,10)) + ' (고정)';
     progressInput.value = g.progress;
     progressVal.textContent = g.progress + '%';
     scope = g.scope || '회사';
@@ -1849,19 +2036,24 @@ window.storage = {
     const today=todayISO();
     listEl.innerHTML = filtered.map(g=>{
       const overdue = g.due && g.due<today && g.status!=='완료';
+      const startDate = g.startDate || new Date(g.createdAt).toISOString().slice(0,10);
       return `<div class="goal status-${g.status}" data-id="${g.id}">
         <div class="goal-head">
           <div>
-            <div class="goal-title">${escapeHtml(g.title)}</div>
+            <div class="goal-title" style="cursor:pointer;" data-action="toggleBody">${escapeHtml(g.title)}</div>
             <div class="goal-tags">
               <span class="tag ${g.scope==='개인'?'personal':'work'}">${g.scope||'회사'}</span>
               <span class="tag status-${g.status}">${g.status}</span>
+              <span class="due-tag">시작 ${startDate}</span>
               ${g.due?`<span class="due-tag ${overdue?'overdue':''}">기한 ${g.due}${overdue?' 초과':''}</span>`:''}
+              ${g.due?`<span class="due-tag">${formatDuration(startDate, g.due)}</span>`:`<span class="due-tag">${formatDuration(startDate, todayISO())} 경과</span>`}
             </div>
           </div>
           <button class="del-btn" data-action="delete">×</button>
         </div>
-        ${g.desc?`<div class="goal-desc">${escapeHtml(g.desc)}</div>`:''}
+        <div class="rec-transcript goal-body-box" style="display:none;">
+          ${g.desc?`<div class="goal-desc">${escapeHtml(g.desc)}</div>`:''}
+        </div>
         <div class="goal-progress">
           <div class="bar-track"><div class="bar-fill" style="width:${g.progress}%"></div></div>
           <div class="bar-label"><span>진행률</span><span>${g.progress}%</span></div>
@@ -1877,12 +2069,19 @@ window.storage = {
     const a=e.target.closest('[data-action]');
     if(a && a.dataset.action==='delete') del(el.dataset.id);
     if(a && a.dataset.action==='edit') startEdit(el.dataset.id);
+    if(a && a.dataset.action==='toggleBody'){
+      const box = el.querySelector('.goal-body-box');
+      if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
   });
   listEl.addEventListener('dblclick', e=>{
     const el=e.target.closest('.goal'); if(!el) return;
     const g = items.find(x=>x.id===el.dataset.id); if(!g) return;
-    const metaParts = [g.status, g.scope||'회사']; if (g.due) metaParts.push('기한 '+g.due);
-    window.__showFullView(g.title, metaParts.join(' · '), g.desc||'');
+    const startDate = g.startDate || new Date(g.createdAt).toISOString().slice(0,10);
+    const metaParts = [g.status, g.scope||'회사', '시작 '+startDate];
+    if (g.due) { metaParts.push('기한 '+g.due); metaParts.push(formatDuration(startDate, g.due)); }
+    else { metaParts.push(formatDuration(startDate, todayISO())+' 경과'); }
+    window.__showFullView(g.title, metaParts.join(' · '), g.desc||'', {module:'goal', id:g.id});
   });
   listEl.addEventListener('input', e=>{
     if (e.target.dataset.action==='progress'){ const el=e.target.closest('.goal'); updateProgress(el.dataset.id, parseInt(e.target.value,10)); }
@@ -1910,6 +2109,7 @@ window.storage = {
   let items=[], filter='all', scope='회사', searchQuery='', loaded=false;
   window.__gs_important = () => items;
   window.__restore_important = (data) => { items.unshift(data); save(); if (window.imp_render) window.imp_render(); };
+  window.__moveOut_important = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.imp_render) window.imp_render(); } };
   const groupsEl=document.getElementById('imp_groups');
   const titleInput=document.getElementById('imp_title');
   const contentInput=document.getElementById('imp_content');
@@ -2008,7 +2208,7 @@ window.storage = {
   groupsEl.addEventListener('dblclick', e=>{
     const el=e.target.closest('.entry'); if(!el) return;
     const it = items.find(x=>x.id===el.dataset.id); if(!it) return;
-    window.__showFullView(it.title, it.scope||'회사', it.content||'');
+    window.__showFullView(it.title, it.scope||'회사', it.content||'', {module:'important', id:it.id});
   });
   addBtn.addEventListener('click', add);
   cancelEditBtn.addEventListener('click', resetForm);
@@ -2134,6 +2334,18 @@ window.storage = {
   let items=[], searchQuery='', loaded=false, dateLimit=30;
   window.__gs_god = () => items;
   window.__restore_god = (data) => { items.unshift(data); save(); if (window.god_render) window.god_render(); };
+  window.__moveOut_god = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.god_render) window.god_render(); } };
+  window.__expandDateLimit_god = (targetDate) => {
+    if (targetDate) {
+      searchQuery = ''; if (searchInput) searchInput.value = '';
+      const allDates = Array.from(new Set(items.map(e=>e.date))).sort((a,b)=> b<a?-1:b>a?1:0);
+      const idx = allDates.indexOf(targetDate);
+      if (idx >= 0 && idx + 1 > dateLimit) dateLimit = idx + 1;
+    } else {
+      dateLimit = Infinity;
+    }
+    if (window.god_render) window.god_render();
+  };
   const groupsEl=document.getElementById('god_groups');
   const titleInput=document.getElementById('god_title');
   const dateInput=document.getElementById('god_date');
@@ -2317,7 +2529,7 @@ window.storage = {
     const el=e.target.closest('.entry'); if(!el) return;
     const it = items.find(x=>x.id===el.dataset.id); if(!it) return;
     const meta = [it.date, it.verse].filter(Boolean).join(' · ');
-    window.__showFullView(it.title, meta, it.content||'');
+    window.__showFullView(it.title, meta, it.content||'', {module:'god', id:it.id});
   });
   cancelEditBtn.addEventListener('click', resetForm);
   addBtn.addEventListener('click', add);
@@ -2508,6 +2720,18 @@ window.storage = {
   let diaryTranscript = '', diaryRecognizing = false, diaryRecognition = null, diaryRestartCount = 0;
   window.__gs_diary = () => items;
   window.__restore_diary = (data) => { items.unshift(data); save(); if (window.diary_render) window.diary_render(); };
+  window.__moveOut_diary = (id) => { const i=items.findIndex(x=>x.id===id); if(i>-1){ items.splice(i,1); save(); if (window.diary_render) window.diary_render(); } };
+  window.__expandDateLimit_diary = (targetDate) => {
+    if (targetDate) {
+      searchQuery = ''; if (searchInput) searchInput.value = '';
+      const allDates = Array.from(new Set(items.map(e=>e.date))).sort((a,b)=> b<a?-1:b>a?1:0);
+      const idx = allDates.indexOf(targetDate);
+      if (idx >= 0 && idx + 1 > dateLimit) dateLimit = idx + 1;
+    } else {
+      dateLimit = Infinity;
+    }
+    if (window.diary_render) window.diary_render();
+  };
   const groupsEl=document.getElementById('diary_groups');
   const input=document.getElementById('diary_input');
   const dateInput=document.getElementById('diary_date');
@@ -2743,7 +2967,7 @@ window.storage = {
     const el=e.target.closest('.entry'); if(!el) return;
     if (el.querySelector('textarea')) return;
     const it = items.find(x=>x.id===el.dataset.id); if(!it) return;
-    window.__showFullView(it.date, '', it.text);
+    window.__showFullView(it.date, '', it.text, {module:'diary', id:it.id});
   });
   addBtn.addEventListener('click', add);
   cancelEditBtn.addEventListener('click', resetForm);
@@ -3326,6 +3550,16 @@ window.storage = {
     return results;
   }
 
+  function escapeHtmlWithHighlight(text, q) {
+    const esc = escapeHtml(text || '');
+    if (!q) return esc;
+    const qEsc = escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!qEsc) return esc;
+    try {
+      const re = new RegExp(qEsc, 'gi');
+      return esc.replace(re, m => `<span class="gs-word-highlight">${m}</span>`);
+    } catch (e) { return esc; }
+  }
   function renderResults(query) {
     const results = gather(query);
     if (results.length === 0) {
@@ -3339,8 +3573,8 @@ window.storage = {
         <div class="gs-group-label">${label} (${byLabel[label].length})</div>
         ${byLabel[label].map(r => `
           <div class="gs-result" data-page="${r.page}" data-id="${r.id}">
-            <div class="gs-result-title">${escapeHtml(r.title)}</div>
-            ${r.snip ? `<div class="gs-result-snippet">${escapeHtml(r.snip)}</div>` : ''}
+            <div class="gs-result-title">${escapeHtmlWithHighlight(r.title, query)}</div>
+            ${r.snip ? `<div class="gs-result-snippet">${escapeHtmlWithHighlight(r.snip, query)}</div>` : ''}
             ${r.meta ? `<div class="gs-result-meta">${escapeHtml(String(r.meta))}</div>` : ''}
           </div>
         `).join('')}
@@ -3363,11 +3597,42 @@ window.storage = {
     }
   });
 
+  function highlightMatches(root, query) {
+    if (!root || !query) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    let n;
+    while (n = walker.nextNode()) nodes.push(n);
+    const esc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(esc, 'gi');
+    nodes.forEach(node => {
+      if (node.parentElement && node.parentElement.classList.contains('gs-word-highlight')) return;
+      const text = node.nodeValue;
+      re.lastIndex = 0;
+      if (!re.test(text)) return;
+      re.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0, m;
+      while ((m = re.exec(text))) {
+        if (m.index > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, m.index)));
+        const mark = document.createElement('span');
+        mark.className = 'gs-word-highlight';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        lastIdx = m.index + m[0].length;
+        if (m[0].length === 0) re.lastIndex++;
+      }
+      if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      if (node.parentNode) node.parentNode.replaceChild(frag, node);
+    });
+  }
   resultsEl.addEventListener('click', e => {
     const el = e.target.closest('.gs-result');
     if (!el) return;
     const page = el.dataset.page;
     const id = el.dataset.id;
+    const query = input.value.trim();
+    input.blur();
     input.value = '';
     mainnavEl.style.display = '';
     pages().forEach(p => p.style.display = '');
@@ -3375,20 +3640,30 @@ window.storage = {
     resultsEl.innerHTML = '';
     const btn = mainnavEl.querySelector(`[data-page="${page}"]`);
     if (btn) btn.click();
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+    const getFn = window['__gs_' + (page === 'meeting' ? 'meet' : (page === 'important' ? 'important' : page))];
+    const srcItem = getFn ? (getFn() || []).find(x => x.id === id) : null;
+    const expandFn = window['__expandDateLimit_' + page];
+    if (expandFn) expandFn(srcItem ? srcItem.date : null);
+    let attempts = 0;
+    function tryLocate() {
+      attempts++;
       const pageEl = document.getElementById('page-' + page);
-      if (!pageEl) return;
-      const target = pageEl.querySelector(`[data-id="${CSS.escape(id)}"]`);
-      if (!target) return;
-      const toggle = target.querySelector('[data-action="toggleBody"]');
-      if (toggle) {
-        const box = toggle.nextElementSibling;
-        if (box && box.style.display === 'none') toggle.click();
+      const target = pageEl ? pageEl.querySelector(`[data-id="${CSS.escape(id)}"]`) : null;
+      if (!target) {
+        if (attempts < 30) { setTimeout(tryLocate, 60); }
+        return;
       }
+      const box = target.querySelector('.rec-transcript');
+      if (box && box.style.display === 'none') box.style.display = 'block';
       target.scrollIntoView({behavior:'smooth', block:'center'});
       target.classList.add('gs-highlight');
+      if (query) {
+        highlightMatches(target, query);
+        setTimeout(() => { if (document.body.contains(target)) highlightMatches(target, query); }, 300);
+      }
       setTimeout(() => target.classList.remove('gs-highlight'), 2200);
-    }));
+    }
+    setTimeout(tryLocate, 60);
   });
 
   function pad(n){ return String(n).padStart(2,'0'); }
@@ -3502,6 +3777,8 @@ window.storage = {
   const input = document.getElementById('lockInput');
   const btn = document.getElementById('lockBtn');
   const errEl = document.getElementById('lockError');
+  const localWarning = document.getElementById('localFileWarning');
+  if (location.protocol === 'file:' && localWarning) localWarning.style.display = 'block';
 
   function tryUnlock() {
     if (input.value === APP_PASSWORD) {
@@ -3523,6 +3800,37 @@ window.storage = {
   btn.addEventListener('click', tryUnlock);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
   input.focus();
+})();
+
+(function(){
+  const shareId = new URLSearchParams(location.search).get('share');
+  if (!shareId) return;
+  // 공유 링크로 들어온 경우: 비밀번호/전체 앱을 건너뛰고 해당 내용만 보여줌
+  const lockOverlay = document.getElementById('lockOverlay');
+  const mainSheet = document.getElementById('mainSheet');
+  const sharedView = document.getElementById('sharedPageView');
+  if (lockOverlay) lockOverlay.style.display = 'none';
+  if (mainSheet) mainSheet.style.display = 'none';
+  sharedView.style.display = 'block';
+  const titleEl = document.getElementById('sharedPageTitle');
+  const metaEl = document.getElementById('sharedPageMeta');
+  const contentEl = document.getElementById('sharedPageContent');
+  titleEl.textContent = '불러오는 중...';
+  (async () => {
+    try {
+      const r = await window.storage.get('share_' + shareId, true);
+      if (!r || !r.value) throw new Error('not found');
+      const data = JSON.parse(r.value);
+      titleEl.textContent = data.title || '(제목 없음)';
+      if (data.meta) { metaEl.textContent = data.meta; metaEl.style.display = 'block'; }
+      else { metaEl.style.display = 'none'; }
+      contentEl.textContent = data.content || '';
+    } catch (e) {
+      titleEl.textContent = '공유 링크를 찾을 수 없습니다';
+      metaEl.style.display = 'none';
+      contentEl.textContent = '링크가 만료되었거나 잘못되었을 수 있습니다.';
+    }
+  })();
 })();
 </script>
 </body>
