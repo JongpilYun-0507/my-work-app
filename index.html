@@ -741,6 +741,27 @@ function formatDuration(startStr, endStr) {
   if (!d) return '';
   return `총 ${d.totalDays}일(${d.months}개월 ${d.days}일)`;
 }
+// 기한 - 현재일처럼 '남은/지난 기간'을 계산 (총 기간과 달리 +1 보정 없이 순수 차이)
+function calcRemaining(fromStr, toStr) {
+  if (!fromStr || !toStr) return null;
+  const from = new Date(fromStr + 'T00:00:00');
+  const to = new Date(toStr + 'T00:00:00');
+  if (isNaN(from) || isNaN(to) || to < from) return null;
+  const totalDays = Math.round((to - from) / (1000 * 60 * 60 * 24));
+  let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  let days = to.getDate() - from.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonthLastDay = new Date(to.getFullYear(), to.getMonth(), 0).getDate();
+    days += prevMonthLastDay;
+  }
+  return { totalDays, months, days };
+}
+function formatRemaining(fromStr, toStr) {
+  const d = calcRemaining(fromStr, toStr);
+  if (!d) return '';
+  return `${d.totalDays}일(${d.months}개월 ${d.days}일)`;
+}
 (function(){
   const overlay = document.getElementById('fullviewOverlay');
   const titleEl = document.getElementById('fullviewTitle');
@@ -2046,7 +2067,11 @@ window.storage = {
               <span class="tag status-${g.status}">${g.status}</span>
               <span class="due-tag">시작 ${startDate}</span>
               ${g.due?`<span class="due-tag ${overdue?'overdue':''}">기한 ${g.due}${overdue?' 초과':''}</span>`:''}
-              ${g.due?`<span class="due-tag">${formatDuration(startDate, g.due)}</span>`:`<span class="due-tag">${formatDuration(startDate, todayISO())} 경과</span>`}
+              ${g.due
+                ? (g.due>=today
+                    ? `<span class="due-tag">잔여 ${formatRemaining(today, g.due)}</span>`
+                    : `<span class="due-tag overdue">${formatRemaining(g.due, today)} 초과</span>`)
+                : `<span class="due-tag">${formatDuration(startDate, today)} 경과</span>`}
             </div>
           </div>
           <button class="del-btn" data-action="delete">×</button>
@@ -2078,9 +2103,12 @@ window.storage = {
     const el=e.target.closest('.goal'); if(!el) return;
     const g = items.find(x=>x.id===el.dataset.id); if(!g) return;
     const startDate = g.startDate || new Date(g.createdAt).toISOString().slice(0,10);
+    const today = todayISO();
     const metaParts = [g.status, g.scope||'회사', '시작 '+startDate];
-    if (g.due) { metaParts.push('기한 '+g.due); metaParts.push(formatDuration(startDate, g.due)); }
-    else { metaParts.push(formatDuration(startDate, todayISO())+' 경과'); }
+    if (g.due) {
+      metaParts.push('기한 '+g.due);
+      metaParts.push(g.due>=today ? '잔여 '+formatRemaining(today, g.due) : formatRemaining(g.due, today)+' 초과');
+    } else { metaParts.push(formatDuration(startDate, today)+' 경과'); }
     window.__showFullView(g.title, metaParts.join(' · '), g.desc||'', {module:'goal', id:g.id});
   });
   listEl.addEventListener('input', e=>{
