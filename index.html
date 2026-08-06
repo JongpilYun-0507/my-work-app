@@ -81,6 +81,8 @@
   .prio-toggle button, .kind-toggle button { border: none; background: var(--paper); color: var(--ink-soft); padding: 6px 10px; cursor: pointer; }
   .prio-toggle button.active[data-p="일반"] { background: var(--blueprint-soft); color: var(--blueprint); font-weight: 600; }
   .prio-toggle button.active[data-p="긴급"] { background: var(--urgent-soft); color: var(--urgent); font-weight: 600; }
+  .prio-toggle button.active[data-p="장기과제"] { background: #E8DFF5; color: #6B3FA0; font-weight: 600; }
+  .tag.longterm { background: #E8DFF5; color: #6B3FA0; }
   .kind-toggle button.active[data-k="내부"] { background: var(--internal-soft); color: var(--internal); font-weight: 600; }
   .kind-toggle button.active[data-k="외부"] { background: var(--urgent-soft); color: var(--urgent); font-weight: 600; }
   .scope-toggle { display: flex; border: 1px solid var(--paper-line); border-radius: var(--radius); overflow: hidden; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
@@ -296,6 +298,7 @@
           <div class="prio-toggle" id="todo_prioToggle">
             <button type="button" data-p="일반" class="active">일반</button>
             <button type="button" data-p="긴급">긴급</button>
+            <button type="button" data-p="장기과제">장기과제</button>
           </div>
           <div class="scope-toggle" id="todo_scopeToggle">
             <button type="button" data-s="회사" class="active">회사</button>
@@ -310,6 +313,7 @@
         <button class="tab active" data-filter="all">전체</button>
         <button class="tab" data-filter="회사">회사</button>
         <button class="tab" data-filter="개인">개인</button>
+        <button class="tab" data-filter="장기과제">장기과제</button>
         <button class="tab" data-filter="done">완료</button>
       </div>
       <div class="list" id="todo_list"></div>
@@ -1091,13 +1095,18 @@ window.storage = {
     items=items.filter(x=>x.id!==id); save(); render();
   }
   function sortItems(arr){
+    const order = {'긴급':0, '일반':1, '장기과제':2};
     return arr.slice().sort((a,b)=>{
       if (a.done!==b.done) return a.done?1:-1;
-      if (a.priority!==b.priority) return a.priority==='긴급'?-1:1;
+      if (a.priority!==b.priority) return (order[a.priority]??1) - (order[b.priority]??1);
       const ad=a.due||'9999-99-99', bd=b.due||'9999-99-99';
       if (ad!==bd) return ad<bd?-1:1;
       return b.createdAt-a.createdAt;
     });
+  }
+  function formatCreatedAt(ts){
+    const d = new Date(ts);
+    return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   }
   window.todo_render = function render(){
     if (!loaded) return;
@@ -1110,6 +1119,7 @@ window.storage = {
     let filtered;
     if (filter==='all') filtered = items.filter(t=>!t.done);
     else if (filter==='done') filtered = items.filter(t=>t.done);
+    else if (filter==='장기과제') filtered = items.filter(t=>t.priority==='장기과제' && !t.done);
     else filtered = items.filter(t=>t.scope===filter && !t.done);
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
@@ -1128,7 +1138,9 @@ window.storage = {
           <div class="task-meta">
             <span class="tag ${t.scope==='개인'?'personal':'work'}">${t.scope||'회사'}</span>
             ${t.priority==='긴급'?'<span class="tag urgent">긴급</span>':''}
+            ${t.priority==='장기과제'?'<span class="tag longterm">장기과제</span>':''}
             ${t.due?`<span class="due ${overdue?'overdue':''}">${t.due}${overdue?' 기한초과':''}</span>`:''}
+            ${t.createdAt?`<span class="due">생성 ${formatCreatedAt(t.createdAt)}</span>`:''}
           </div>
         </div>
         <div style="display:flex; gap:4px; flex-shrink:0;">
@@ -1149,7 +1161,7 @@ window.storage = {
   listEl.addEventListener('dblclick', e=>{
     const el=e.target.closest('.task'); if(!el) return;
     const it = items.find(x=>x.id===el.dataset.id); if(!it) return;
-    const metaParts = [it.scope||'회사']; if (it.due) metaParts.push('마감 '+it.due);
+    const metaParts = [it.scope||'회사']; if (it.priority && it.priority!=='일반') metaParts.push(it.priority); if (it.due) metaParts.push('마감 '+it.due); if (it.createdAt) metaParts.push('생성 '+formatCreatedAt(it.createdAt));
     window.__showFullView('할일', metaParts.join(' · '), it.text, {module:'todo', id:it.id});
   });
   cancelEditBtn.addEventListener('click', resetForm);
